@@ -154,7 +154,7 @@ export function createBlueprintTools(client) {
         {
             name: "blueprint_build_from_json",
             description: "Builds a Blueprint event graph from a JSON node/connection description. " +
-                "Supported node types (Pass 1): BeginPlay, PrintString. " +
+                "Supported node types: BeginPlay, PrintString, Delay, CallFunction. " +
                 "Connections use 'nodeId.exec' format for exec pin wiring.",
             inputSchema: z.object({
                 blueprint_path: z
@@ -164,7 +164,8 @@ export function createBlueprintTools(client) {
                 graph: z.object({
                     nodes: z.array(z.object({
                         id: z.string().describe("Unique node identifier"),
-                        type: z.string().describe("Node type: BeginPlay or PrintString"),
+                        type: z.string().describe("Node type: BeginPlay | PrintString | Delay | CallFunction"),
+                        function: z.string().optional().describe("Required when type is CallFunction -- function name on UKismetSystemLibrary"),
                     })),
                     connections: z.array(z.object({
                         from: z.string().describe("Source node and pin role: nodeId.exec"),

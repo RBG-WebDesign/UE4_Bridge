@@ -169,7 +169,7 @@ export function createBlueprintTools(client: UnrealClient): ToolDefinition[] {
       name: "blueprint_build_from_json",
       description:
         "Builds a Blueprint event graph from a JSON node/connection description. " +
-        "Supported node types (Pass 1): BeginPlay, PrintString. " +
+        "Supported node types: BeginPlay, PrintString, Delay, CallFunction. " +
         "Connections use 'nodeId.exec' format for exec pin wiring.",
       inputSchema: z.object({
         blueprint_path: z
@@ -180,7 +180,8 @@ export function createBlueprintTools(client: UnrealClient): ToolDefinition[] {
           nodes: z.array(
             z.object({
               id: z.string().describe("Unique node identifier"),
-              type: z.string().describe("Node type: BeginPlay or PrintString"),
+              type: z.string().describe("Node type: BeginPlay | PrintString | Delay | CallFunction"),
+              function: z.string().optional().describe("Required when type is CallFunction -- function name on UKismetSystemLibrary"),
             })
           ),
           connections: z.array(
@@ -195,7 +196,7 @@ export function createBlueprintTools(client: UnrealClient): ToolDefinition[] {
       handler: async (params) => {
         const { blueprint_path, graph, clear_existing } = params as {
           blueprint_path: string;
-          graph: { nodes: Array<{ id: string; type: string }>; connections: Array<{ from: string; to: string }> };
+          graph: { nodes: Array<{ id: string; type: string; function?: string }>; connections: Array<{ from: string; to: string }> };
           clear_existing: boolean;
         };
 
