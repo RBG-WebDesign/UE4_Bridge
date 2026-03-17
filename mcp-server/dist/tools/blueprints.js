@@ -155,6 +155,7 @@ export function createBlueprintTools(client) {
             name: "blueprint_build_from_json",
             description: "Builds a Blueprint event graph from a JSON node/connection description. " +
                 "Supported node types: BeginPlay, PrintString, Delay, CallFunction. " +
+                "Node objects accept an optional 'params' key to set pin default values by PinName. " +
                 "Connections use 'nodeId.exec' format for exec pin wiring.",
             inputSchema: z.object({
                 blueprint_path: z
@@ -166,6 +167,9 @@ export function createBlueprintTools(client) {
                         id: z.string().describe("Unique node identifier"),
                         type: z.string().describe("Node type: BeginPlay | PrintString | Delay | CallFunction"),
                         function: z.string().optional().describe("Required when type is CallFunction -- function name on UKismetSystemLibrary"),
+                        params: z.record(z.union([z.string(), z.number(), z.boolean()]))
+                            .optional()
+                            .describe("Pin default values keyed by PinName. Supports string, number, bool only."),
                     })),
                     connections: z.array(z.object({
                         from: z.string().describe("Source node and pin role: nodeId.exec"),
