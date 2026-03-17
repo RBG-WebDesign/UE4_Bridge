@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "unreal-bridge": {
+      "command": "node",
+      "args": ["mcp-server/dist/index.js"],
+      "cwd": "."
+    }
+  }
+}

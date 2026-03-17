@@ -1,0 +1,15 @@
+{
+  "name": "unreal-mcp-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MCP bridge for controlling UE4.27 editor from Claude Code",
+  "workspaces": [
+    "mcp-server"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=mcp-server",
+    "dev": "npm run dev --workspace=mcp-server",
+    "test": "npm test --workspace=mcp-server",
+    "test:integration": "npm run test:integration --workspace=mcp-server"
+  }
+}

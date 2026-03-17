@@ -1,0 +1,1 @@
+{"version":3,"file":"operations.d.ts","sourceRoot":"","sources":["../../src/tools/operations.ts"],"names":[],"mappings":"AAAA;;;GAGG;AAGH,OAAO,EAAE,YAAY,EAAE,MAAM,qBAAqB,CAAC;AACnD,OAAO,EAAE,gBAAgB,EAAE,MAAM,eAAe,CAAC;AACjD,OAAO,KAAK,EAAE,cAAc,EAAE,MAAM,aAAa,CAAC;AAElD,wBAAgB,qBAAqB,CACnC,MAAM,EAAE,YAAY,EACpB,OAAO,EAAE,gBAAgB,GACxB,cAAc,EAAE,CAmJlB"}
