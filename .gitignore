@@ -1,0 +1,5 @@
+node_modules/
+mcp-server/dist/
+*.log
+.DS_Store
+Thumbs.db
