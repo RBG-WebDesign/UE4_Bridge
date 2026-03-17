@@ -279,6 +279,8 @@
 
 - [ ] **Step 3: Test CallFunction with PrintString**
 
+  Run **directly in UE4's Python console** (not via MCP):
+
   ```python
   import unreal, json
   bp = unreal.load_object(None, "/Game/BP_TestGraph.BP_TestGraph")
