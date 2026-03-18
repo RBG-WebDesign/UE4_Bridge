@@ -27,4 +27,5 @@ private:
 	TMap<FString, FWidgetTypeInfo> TypeRegistry;
 
 	void RegisterTypes();
+	static void AddCommonProperties(FWidgetTypeInfo& Info);
 };

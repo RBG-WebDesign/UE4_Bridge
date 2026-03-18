@@ -11,14 +11,16 @@ UPanelSlot* FWidgetChildAttachment::AttachChild(UWidget* Parent, UWidget* Child,
         return nullptr;
     }
 
+    // Both panel widgets (CanvasPanel, VBox, HBox, Overlay) and content widgets
+    // (Button, Border, SizeBox) inherit from UPanelWidget in UE4.
+    // The validator enforces the single-child rule for content widgets.
     UPanelWidget* Panel = Cast<UPanelWidget>(Parent);
     if (Panel)
     {
         return AttachToPanel(Panel, Child, Path, OutError);
     }
 
-    // If parent is not a panel, attachment is not supported (content widgets added in Pass 4)
-    OutError = FString::Printf(TEXT("[WidgetBuilder] %s: Parent '%s' is not a panel widget, cannot attach children"),
+    OutError = FString::Printf(TEXT("[WidgetBuilder] %s: Parent '%s' cannot accept children"),
         *Path, *Parent->GetName());
     return nullptr;
 }

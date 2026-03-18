@@ -1,6 +1,8 @@
 #include "WidgetTreeBuilder.h"
 #include "WidgetClassRegistry.h"
 #include "WidgetChildAttachment.h"
+#include "WidgetSlotPropertyApplier.h"
+#include "WidgetPropertyApplier.h"
 #include "WidgetBlueprint.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Widget.h"
@@ -47,6 +49,15 @@ UWidget* FWidgetTreeBuilder::BuildNode(
 
 	UE_LOG(LogTemp, Log, TEXT("[WidgetBuilder] %s: Constructed %s as '%s'"), *Path, *Spec.Type, *Spec.Name);
 
+	// Step 2b: Apply widget properties
+	if (Spec.Properties.Num() > 0)
+	{
+		if (!FWidgetPropertyApplier::ApplyProperties(Widget, Spec.Type, Spec.Properties, Path, OutError))
+		{
+			return nullptr;
+		}
+	}
+
 	// Step 3: Attach to parent (skip for root -- root is assigned to WidgetTree->RootWidget by caller)
 	if (Parent)
 	{
@@ -55,7 +66,15 @@ UWidget* FWidgetTreeBuilder::BuildNode(
 		{
 			return nullptr;
 		}
-		// Slot returned for future Pass 5 property application
+
+		// Apply slot properties if specified in JSON
+		if (Spec.bHasSlot)
+		{
+			if (!FWidgetSlotPropertyApplier::ApplySlotProperties(Slot, Spec.Slot, Path, OutError))
+			{
+				return nullptr;
+			}
+		}
 	}
 
 	// Step 4: Recurse into children
