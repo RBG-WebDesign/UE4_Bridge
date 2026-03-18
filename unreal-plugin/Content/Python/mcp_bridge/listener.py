@@ -115,64 +115,10 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
             self._send_error(500, f"Internal server error: {str(e)}")
 
     def do_GET(self) -> None:
-        """Handle GET requests: /ping, /status, / (health check)."""
-        path = self.path.rstrip("/")
-
-        if path == "/ping":
-            self._send_json(200, {
-                "success": True,
-                "data": {"ok": True}
-            })
-        elif path == "/status":
-            self._handle_status()
-        else:
-            # Backward-compatible health check
-            self._send_json(200, {
-                "success": True,
-                "data": {"status": "ok", "message": "MCP Bridge listener is running"}
-            })
-
-    def _handle_status(self) -> None:
-        """Return full bridge status. Reads thread-safe module-level vars only."""
-        uptime = time.time() - _start_time if _start_time > 0 else 0.0
-
-        last_event = None
-        if _last_event_timestamp > 0:
-            last_event = {
-                "timestamp": _last_event_timestamp,
-                "command": _last_event_command,
-                "result": _last_event_result,
-                "duration_ms": round(_last_event_duration_ms, 1),
-            }
-
+        """Handle GET requests (health check)."""
         self._send_json(200, {
             "success": True,
-            "data": {
-                "version": "0.1.0",
-                "protocol_version": 1,
-                "bridge": {
-                    "running": True,
-                    "port": PORT,
-                    "uptime_sec": round(uptime, 1),
-                    "total_requests": _request_counter,
-                    "server_time": time.time(),
-                },
-                "last_event": last_event,
-                "subsystems": {
-                    "blueprint_builder": {
-                        "loaded": _blueprint_builder_loaded,
-                        "version": _blueprint_builder_version,
-                    },
-                    "widget_blueprint_builder": {
-                        "loaded": _widget_blueprint_builder_loaded,
-                        "version": _widget_blueprint_builder_version,
-                    },
-                    "shaderweave": {
-                        "registered": _shaderweave_registered,
-                        "active_sessions": _shaderweave_active_sessions,
-                    },
-                },
-            }
+            "data": {"status": "ok", "message": "MCP Bridge listener is running"}
         })
 
     def _send_json(self, status: int, data: Dict[str, Any]) -> None:
@@ -195,7 +141,7 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
 
 def _process_command_queue(delta_time: float) -> None:
     """Tick callback that processes queued commands on the game thread.
-    
+
     This function is registered with unreal.register_slate_post_tick_callback
     and runs every editor tick on the game thread, where unreal API calls are safe.
     """
@@ -270,11 +216,11 @@ def _detect_subsystems() -> None:
 
 def start(host: str = HOST, port: int = PORT) -> bool:
     """Start the MCP Bridge listener.
-    
+
     Args:
         host: Hostname to bind to. Default: localhost
         port: Port to bind to. Default: 8080
-    
+
     Returns:
         True if the server started successfully, False if already running.
     """
@@ -322,7 +268,7 @@ def start(host: str = HOST, port: int = PORT) -> bool:
 
 def stop() -> bool:
     """Stop the MCP Bridge listener.
-    
+
     Returns:
         True if stopped successfully, False if not running.
     """
@@ -359,7 +305,7 @@ def stop() -> bool:
 
 def restart(host: str = HOST, port: int = PORT) -> bool:
     """Restart the MCP Bridge listener.
-    
+
     Returns:
         True if restarted successfully.
     """
