@@ -1,0 +1,50 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Dom/JsonValue.h"
+#include "Layout/Margin.h"
+
+enum class EWidgetCategory : uint8
+{
+	Leaf,
+	Content,
+	Panel
+};
+
+struct FWidgetPropertyDescriptor
+{
+	FString Name;
+	EJson ExpectedType; // EJson::String, EJson::Number, EJson::Boolean, EJson::Object
+};
+
+struct FWidgetSlotSpec
+{
+	FVector2D Position = FVector2D::ZeroVector;
+	FVector2D Size = FVector2D::ZeroVector;
+	FVector2D Alignment = FVector2D::ZeroVector;
+	FMargin Padding = FMargin(0);
+	int32 ZOrder = 0;
+	bool bAutoSize = false;
+
+	bool bHasPosition = false;
+	bool bHasSize = false;
+	bool bHasAlignment = false;
+	bool bHasPadding = false;
+	bool bHasZOrder = false;
+	bool bHasAutoSize = false;
+};
+
+struct FWidgetNodeSpec
+{
+	FString Type;
+	FString Name;
+	TMap<FString, TSharedPtr<FJsonValue>> Properties;
+	FWidgetSlotSpec Slot;
+	bool bHasSlot = false;
+	TArray<FWidgetNodeSpec> Children;
+};
+
+struct FWidgetBlueprintSpec
+{
+	FWidgetNodeSpec Root;
+};
