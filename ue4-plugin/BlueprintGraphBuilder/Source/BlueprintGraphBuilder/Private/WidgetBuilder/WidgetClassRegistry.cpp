@@ -1,6 +1,9 @@
 #include "WidgetClassRegistry.h"
 #include "Components/CanvasPanel.h"
 #include "Components/Widget.h"
+#include "Components/TextBlock.h"
+#include "Components/Image.h"
+#include "Components/Spacer.h"
 
 FWidgetClassRegistry::FWidgetClassRegistry()
 {
@@ -15,6 +18,22 @@ void FWidgetClassRegistry::RegisterTypes()
 	CanvasPanelInfo.Category = EWidgetCategory::Panel;
 	// No properties for CanvasPanel in v1
 	TypeRegistry.Add(TEXT("CanvasPanel"), MoveTemp(CanvasPanelInfo));
+
+	// Pass 2: Leaf widgets
+	FWidgetTypeInfo TextBlockInfo;
+	TextBlockInfo.WidgetClass = UTextBlock::StaticClass();
+	TextBlockInfo.Category = EWidgetCategory::Leaf;
+	TypeRegistry.Add(TEXT("TextBlock"), MoveTemp(TextBlockInfo));
+
+	FWidgetTypeInfo ImageInfo;
+	ImageInfo.WidgetClass = UImage::StaticClass();
+	ImageInfo.Category = EWidgetCategory::Leaf;
+	TypeRegistry.Add(TEXT("Image"), MoveTemp(ImageInfo));
+
+	FWidgetTypeInfo SpacerInfo;
+	SpacerInfo.WidgetClass = USpacer::StaticClass();
+	SpacerInfo.Category = EWidgetCategory::Leaf;
+	TypeRegistry.Add(TEXT("Spacer"), MoveTemp(SpacerInfo));
 }
 
 TSubclassOf<UWidget> FWidgetClassRegistry::ResolveWidgetClass(const FString& TypeName) const
