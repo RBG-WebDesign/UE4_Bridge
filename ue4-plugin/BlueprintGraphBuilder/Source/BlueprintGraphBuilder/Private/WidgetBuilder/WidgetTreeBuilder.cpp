@@ -4,6 +4,7 @@
 #include "WidgetBlueprint.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Widget.h"
+#include "Components/PanelSlot.h"
 
 FWidgetTreeBuilder::FWidgetTreeBuilder(const FWidgetClassRegistry& InClassRegistry, FWidgetChildAttachment& InChildAttachment)
 	: ClassRegistry(InClassRegistry)
@@ -49,10 +50,12 @@ UWidget* FWidgetTreeBuilder::BuildNode(
 	// Step 3: Attach to parent (skip for root -- root is assigned to WidgetTree->RootWidget by caller)
 	if (Parent)
 	{
-		if (!ChildAttachment.AttachChild(Parent, Widget, Path, OutError))
+		UPanelSlot* Slot = ChildAttachment.AttachChild(Parent, Widget, Path, OutError);
+		if (!Slot)
 		{
 			return nullptr;
 		}
+		// Slot returned for future Pass 5 property application
 	}
 
 	// Step 4: Recurse into children

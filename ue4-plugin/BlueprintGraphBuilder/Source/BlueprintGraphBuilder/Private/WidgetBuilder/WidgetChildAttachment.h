@@ -4,12 +4,17 @@
 
 class UWidget;
 class UPanelWidget;
+class UPanelSlot;
 
 class FWidgetChildAttachment
 {
 public:
-    bool AttachChild(UWidget* Parent, UWidget* Child, const FString& Path, FString& OutError);
+    /**
+     * Attach a child widget to its parent. Returns the created slot, or nullptr on failure.
+     * Pass 5 will use the returned slot to apply slot properties (position, padding, alignment).
+     */
+    UPanelSlot* AttachChild(UWidget* Parent, UWidget* Child, const FString& Path, FString& OutError);
 
 private:
-    bool AttachToPanel(UPanelWidget* Panel, UWidget* Child, const FString& Path, FString& OutError);
+    UPanelSlot* AttachToPanel(UPanelWidget* Panel, UWidget* Child, const FString& Path, FString& OutError);
 };

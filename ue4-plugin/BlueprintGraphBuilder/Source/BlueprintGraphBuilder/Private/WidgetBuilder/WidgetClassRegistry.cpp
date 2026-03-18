@@ -1,5 +1,8 @@
 #include "WidgetClassRegistry.h"
 #include "Components/CanvasPanel.h"
+#include "Components/VerticalBox.h"
+#include "Components/HorizontalBox.h"
+#include "Components/Overlay.h"
 #include "Components/Widget.h"
 #include "Components/TextBlock.h"
 #include "Components/Image.h"
@@ -34,6 +37,22 @@ void FWidgetClassRegistry::RegisterTypes()
 	SpacerInfo.WidgetClass = USpacer::StaticClass();
 	SpacerInfo.Category = EWidgetCategory::Leaf;
 	TypeRegistry.Add(TEXT("Spacer"), MoveTemp(SpacerInfo));
+
+	// Pass 3: Layout panels
+	FWidgetTypeInfo VerticalBoxInfo;
+	VerticalBoxInfo.WidgetClass = UVerticalBox::StaticClass();
+	VerticalBoxInfo.Category = EWidgetCategory::Panel;
+	TypeRegistry.Add(TEXT("VerticalBox"), MoveTemp(VerticalBoxInfo));
+
+	FWidgetTypeInfo HorizontalBoxInfo;
+	HorizontalBoxInfo.WidgetClass = UHorizontalBox::StaticClass();
+	HorizontalBoxInfo.Category = EWidgetCategory::Panel;
+	TypeRegistry.Add(TEXT("HorizontalBox"), MoveTemp(HorizontalBoxInfo));
+
+	FWidgetTypeInfo OverlayInfo;
+	OverlayInfo.WidgetClass = UOverlay::StaticClass();
+	OverlayInfo.Category = EWidgetCategory::Panel;
+	TypeRegistry.Add(TEXT("Overlay"), MoveTemp(OverlayInfo));
 }
 
 TSubclassOf<UWidget> FWidgetClassRegistry::ResolveWidgetClass(const FString& TypeName) const
