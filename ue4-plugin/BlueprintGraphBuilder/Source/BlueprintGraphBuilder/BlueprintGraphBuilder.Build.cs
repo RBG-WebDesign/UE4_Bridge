@@ -22,6 +22,10 @@ public class BlueprintGraphBuilder : ModuleRules
             "GraphEditor",
             "Json",
             "JsonUtilities",
+            "UMG",
+            "UMGEditor",
+            "Slate",
+            "SlateCore",
         });
     }
 }
