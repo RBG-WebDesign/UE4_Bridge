@@ -59,7 +59,7 @@ async function main(): Promise<void> {
     "actor_spawn", "actor_modify", "actor_delete", "actor_duplicate",
     "actor_organize", "actor_snap_to_socket", "batch_spawn",
     "material_create", "material_apply",
-    "blueprint_create", "blueprint_compile", "blueprint_build_from_json",
+    "blueprint_create", "blueprint_compile", "blueprint_build_from_json", "blueprint_build_from_description",
     "level_save",
   ]);
 

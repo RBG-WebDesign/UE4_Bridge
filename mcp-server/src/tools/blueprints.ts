@@ -5,6 +5,8 @@
 import { z } from "zod";
 import { UnrealClient } from "../unreal-client.js";
 import type { ToolDefinition } from "../types.js";
+import { resolveSteps, listPatterns, type Step } from "../patterns/index.js";
+import "../patterns/common.js"; // side-effect import: registers all patterns
 
 export function createBlueprintTools(client: UnrealClient): ToolDefinition[] {
   return [
@@ -226,6 +228,101 @@ print('blueprint_build_from_json: done')
         const result = await client.sendCommand("python_proxy", { code });
         return {
           content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+        };
+      },
+    },
+    {
+      name: "blueprint_build_from_description",
+      description:
+        "Build a Blueprint event graph from high-level pattern templates. " +
+        "Each step references a named pattern with optional parameters. " +
+        "Exec flow is auto-wired between steps. " +
+        `Available patterns: ${listPatterns().join(", ")}`,
+      inputSchema: z.object({
+        blueprint_path: z
+          .string()
+          .startsWith("/")
+          .describe(
+            "Content path of the Blueprint, e.g. /Game/BP_TestGraph.BP_TestGraph"
+          ),
+        steps: z
+          .array(
+            z.object({
+              pattern: z
+                .string()
+                .describe("Pattern name (e.g., 'on_begin_play', 'print_string')"),
+              params: z
+                .record(z.union([z.string(), z.number(), z.boolean()]))
+                .optional()
+                .describe("Pattern-specific parameters"),
+            })
+          )
+          .describe("Ordered list of pattern steps"),
+        clear_existing: z
+          .boolean()
+          .default(true)
+          .describe("Clear existing graph before building"),
+      }),
+      handler: async (params) => {
+        const {
+          blueprint_path,
+          steps,
+          clear_existing,
+        } = params as {
+          blueprint_path: string;
+          steps: Step[];
+          clear_existing: boolean;
+        };
+
+        // Resolve patterns into a single graph JSON
+        let graph;
+        try {
+          graph = resolveSteps(steps);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ success: false, error: msg }, null, 2),
+              },
+            ],
+          };
+        }
+
+        // Call blueprint_build_from_json via python_proxy
+        const escapedPath = blueprint_path
+          .replace(/\\/g, "\\\\")
+          .replace(/'/g, "\\'");
+        const graphJson = JSON.stringify(graph)
+          .replace(/\\/g, "\\\\")
+          .replace(/'/g, "\\'");
+        const clearFlag = (clear_existing ?? true) ? "True" : "False";
+
+        const code = `\
+import unreal
+bp = unreal.load_object(None, '${escapedPath}')
+if not bp:
+    raise Exception('Blueprint not found at path: ${escapedPath}')
+unreal.BlueprintGraphBuilderLibrary.build_blueprint_from_json(bp, '${graphJson}', ${clearFlag})
+print('blueprint_build_from_description: done')
+`;
+
+        const result = await client.sendCommand("python_proxy", { code });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  ...((result as unknown as Record<string, unknown>) ?? {}),
+                  generated_graph: graph,
+                },
+                null,
+                2
+              ),
+            },
+          ],
         };
       },
     },
