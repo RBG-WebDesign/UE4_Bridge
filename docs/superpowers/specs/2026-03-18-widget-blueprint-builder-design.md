@@ -481,7 +481,7 @@ The public API does not expose `bSave`. The orchestrator always passes `bSave = 
 1. Parse JSON -> FWidgetBlueprintSpec
 2. Validate spec
 3. Create asset via factory
-4. Clear tree: iterate `WidgetTree->GetAllWidgets()` and call `WidgetTree->RemoveWidget()` for each, then set `WidgetTree->RootWidget = nullptr`. Note: `AllWidgets` is private in UE4.27 -- use `GetAllWidgets()` which copies into a provided TArray.
+4. Clear tree: `WidgetTree->GetAllWidgets(Widgets)` copies into a TArray, then reverse-iterate (`i = Num-1; i >= 0; --i`) calling `WidgetTree->RemoveWidget(Widgets[i])` for each, then `WidgetTree->RootWidget = nullptr`. Reverse iteration avoids dependency issues if UE internally reorders on removal. `AllWidgets` is private in UE4.27 -- must use `GetAllWidgets()`.
 5. Build tree via TreeBuilder -> returns root widget
 6. Assign `WidgetTree->RootWidget = Root`
 7. Finalize
@@ -490,7 +490,7 @@ The public API does not expose `bSave`. The orchestrator always passes `bSave = 
 1. Verify WidgetBlueprint and WidgetTree are valid
 2. Parse JSON -> FWidgetBlueprintSpec
 3. Validate spec
-4. Clear tree (GetAllWidgets + RemoveWidget for each, then RootWidget = nullptr)
+4. Clear tree (GetAllWidgets + reverse-iterate RemoveWidget, then RootWidget = nullptr)
 5. Build tree -> returns root
 6. Assign root
 7. Finalize
@@ -499,6 +499,24 @@ The public API does not expose `bSave`. The orchestrator always passes `bSave = 
 1. Parse JSON
 2. Validate spec
 3. Return result (no asset creation)
+
+## Critical Implementation Rules
+
+These behavioral constraints are derived from UE4.27 engine behavior and must be followed exactly.
+
+**Root widget must NOT be attached to any parent.** The root widget is constructed and assigned directly to `WidgetTree->RootWidget`. It is never passed through `AddChild`. If root gets attached like a normal child, the tree will be broken or widgets invisible.
+
+**Null slot after attachment is a hard error.** If `AddChild` succeeds but `Child->Slot` is null, something is structurally wrong. Do not continue building -- fail immediately.
+
+**Asset creation fails if asset already exists.** `CreateWidgetBlueprint` checks for existing asset at path and returns error. No silent overwrite in v1. Use `RebuildWidgetFromJSON` for existing assets.
+
+**Alignment values clamped to [-1.0, 1.0] before float-to-enum conversion.** Prevents unpredictable rounding from out-of-range inputs.
+
+**Color object validation:** All 4 fields (r, g, b, a) must be present, must be numbers, clamped to [0, 1]. No implicit defaults. Construct via `FLinearColor(r, g, b, a)`.
+
+**Compile success check:** After `FKismetEditorUtilities::CompileBlueprint`, verify `WidgetBlueprint->Status == BS_UpToDate`. If not, return error. Silent compile failures are unacceptable.
+
+**Content widget child guard:** Check `ContentWidget->GetChildrenCount() == 0` before `AddChild`. Do not rely on UE silently replacing content.
 
 ## File Layout
 
