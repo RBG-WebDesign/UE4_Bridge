@@ -26,6 +26,8 @@ public class BlueprintGraphBuilder : ModuleRules
             "UMGEditor",
             "Slate",
             "SlateCore",
+            "MovieScene",
+            "MovieSceneTracks",
         });
     }
 }
