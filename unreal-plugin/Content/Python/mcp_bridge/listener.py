@@ -200,6 +200,7 @@ def _process_command_queue(delta_time: float) -> None:
     and runs every editor tick on the game thread, where unreal API calls are safe.
     """
     from mcp_bridge.router import route_command
+    global _last_event_timestamp, _last_event_command, _last_event_result, _last_event_duration_ms
 
     # Process up to 10 commands per tick to avoid blocking the editor
     processed = 0
@@ -213,7 +214,6 @@ def _process_command_queue(delta_time: float) -> None:
         command = item["command"]
         params = item["params"]
 
-        global _last_event_timestamp, _last_event_command, _last_event_result, _last_event_duration_ms
         cmd_start = time.time()
 
         try:
