@@ -157,7 +157,7 @@ struct FWidgetSlotSpec
     FVector2D Position = FVector2D::ZeroVector;
     FVector2D Size = FVector2D::ZeroVector;
     FVector2D Alignment = FVector2D::ZeroVector;
-    FMargin Padding;
+    FMargin Padding = FMargin(0);  // FMargin default ctor does not zero-initialize in UE4.27
     int32 ZOrder = 0;
     bool bAutoSize = false;
     // Presence flags: distinguish "set to zero" from "not specified"
@@ -207,6 +207,22 @@ Static whitelist. No dynamic discovery, no reflection scanning.
 Registry also stores supported property descriptors per type (name + expected JSON type). Validator queries registry to reject unsupported properties.
 
 ```cpp
+class FWidgetClassRegistry
+{
+public:
+    // Resolve "TextBlock" -> UTextBlock::StaticClass(). Returns nullptr if unsupported.
+    TSubclassOf<UWidget> ResolveWidgetClass(const FString& TypeName) const;
+    bool IsSupportedType(const FString& TypeName) const;
+    EWidgetCategory GetCategory(const FString& TypeName) const;
+    TArray<FString> GetSupportedTypes() const;
+    // Property validation support
+    const TArray<FWidgetPropertyDescriptor>* GetSupportedProperties(const FString& TypeName) const;
+};
+```
+
+Implemented as static TMap initialized once. Instantiated per-call by the orchestrator (cheap -- just map lookups). No singleton.
+
+```cpp
 enum class EWidgetCategory
 {
     Leaf,       // cannot have children
@@ -214,6 +230,23 @@ enum class EWidgetCategory
     Panel       // 0..N children
 };
 ```
+
+## Builder Orchestrator Contract
+
+```cpp
+class FWidgetBlueprintBuilder
+{
+public:
+    // Build new widget blueprint from scratch
+    bool Build(const FString& PackagePath, const FString& AssetName, const FString& JsonString, FString& OutError);
+    // Rebuild existing widget blueprint's tree
+    bool Rebuild(UWidgetBlueprint* WidgetBlueprint, const FString& JsonString, FString& OutError);
+    // Validate only, no side effects
+    bool Validate(const FString& JsonString, FString& OutError);
+};
+```
+
+Instantiated per-call. Internally constructs `FWidgetClassRegistry`, `FWidgetTreeBuilder`, and collaborators. Not a singleton. The `Validate` method constructs its own registry instance for property/type validation.
 
 ## Parser Contract
 
@@ -304,7 +337,7 @@ private:
 ```
 
 - Panel: `Panel->AddChild(Child)`, verify `Child->Slot != nullptr` after
-- Content: check `Content->GetContent() == nullptr` first (enforce single child), then `Content->SetContent(Child)`
+- Content: `UContentWidget` inherits from `UPanelWidget` in UE4.27. Use `ContentWidget->AddChild(Child)` (same as panel). The single-child constraint is enforced by `UContentWidget` internally (GetChildrenCount max 1). Check `ContentWidget->GetChildrenCount() == 0` before adding. Do NOT use `SetContent()` -- that method may not exist on the base class in UE4.27.
 - Leaf: error, cannot have children
 - Null slot after attachment is an error, not silently ignored
 - JSON array order = widget tree order (AddChild appends)
@@ -386,15 +419,14 @@ Per-slot property mapping:
 
 **UVerticalBoxSlot / UHorizontalBoxSlot:**
 - padding -> SetPadding
-- alignment -> X=HorizontalAlignment, Y=VerticalAlignment
+- alignment -> Interpreted differently than canvas. Box/overlay alignment maps to discrete enums (EHorizontalAlignment, EVerticalAlignment), not continuous floats. Conversion: X maps to HorizontalAlignment (0.0=Left, 0.5=Center, 1.0=Right, -1.0=Fill), Y maps to VerticalAlignment (0.0=Top, 0.5=Center, 1.0=Bottom, -1.0=Fill). Values that don't match a known threshold are rounded to nearest.
 
 **UOverlaySlot:**
 - padding -> SetPadding
-- alignment -> X=HorizontalAlignment, Y=VerticalAlignment
+- alignment -> Same float-to-enum conversion as box slots
 
-**Content widget slots (UButtonSlot, UBorderSlot, USizeBoxSlot):**
-- padding -> SetPadding (where available)
-- alignment -> SetHorizontalAlignment / SetVerticalAlignment (where available)
+**Content widget slots:**
+Content widget slot classes vary by UE4 version. In UE4.27, Button/Border/SizeBox children may receive `UPanelSlot` or subclass-specific slots. The slot applier should cast to the actual slot class at runtime and apply padding/alignment where available. If the slot type is unrecognized (just `UPanelSlot` base), skip slot application gracefully.
 
 Fields that don't apply to a given slot type are silently ignored.
 
@@ -441,13 +473,15 @@ Flow:
 3. Mark package dirty
 4. If bSave: `UPackage::SavePackage(...)` (only after compile)
 
+The public API does not expose `bSave`. The orchestrator always passes `bSave = true` for `Build` (new assets should be persisted) and `bSave = false` for `Rebuild` (caller decides when to save). This can be revised if needed.
+
 ## Builder Orchestrator Flow
 
 **Build (new asset):**
 1. Parse JSON -> FWidgetBlueprintSpec
 2. Validate spec
 3. Create asset via factory
-4. Clear tree: `WidgetTree->RootWidget = nullptr; WidgetTree->AllWidgets.Empty()`
+4. Clear tree: iterate `WidgetTree->GetAllWidgets()` and call `WidgetTree->RemoveWidget()` for each, then set `WidgetTree->RootWidget = nullptr`. Note: `AllWidgets` is private in UE4.27 -- use `GetAllWidgets()` which copies into a provided TArray.
 5. Build tree via TreeBuilder -> returns root widget
 6. Assign `WidgetTree->RootWidget = Root`
 7. Finalize
@@ -456,7 +490,7 @@ Flow:
 1. Verify WidgetBlueprint and WidgetTree are valid
 2. Parse JSON -> FWidgetBlueprintSpec
 3. Validate spec
-4. Clear tree (root + AllWidgets)
+4. Clear tree (GetAllWidgets + RemoveWidget for each, then RootWidget = nullptr)
 5. Build tree -> returns root
 6. Assign root
 7. Finalize
@@ -566,10 +600,10 @@ Add to private dependencies: `UMG`, `UMGEditor`, `Slate`, `SlateCore`
 **Success criteria:**
 - Content widget shows child in editor
 - Validation fails on Button with 2 children
-- Content widget attachment uses SetContent, not AddChild
-- Existing content is checked before overwriting
+- Content widget attachment uses AddChild (same as panel -- UContentWidget inherits from UPanelWidget)
+- GetChildrenCount() == 0 is checked before adding
 
-**Engine risk:** UContentWidget::SetContent vs AddChild API difference, content slot class behavior.
+**Engine risk:** Content widget child count enforcement, content slot class behavior in UE4.27.
 
 ### Pass 5: Slot properties by parent type
 
@@ -605,13 +639,21 @@ Add to private dependencies: `UMG`, `UMGEditor`, `Slate`, `SlateCore`
 
 ## MCP Layer (after C++ passes complete)
 
-### Python handler
+### Python handlers
 
 New file: `unreal-plugin/Content/Python/mcp_bridge/handlers/widgets.py`
 
-Handler: `handle_widget_build_from_json`
-- Calls `unreal.WidgetBlueprintBuilderLibrary.build_widget_from_json(...)` via UE4 reflection
-- Registered in `router.py` as `"widget_build_from_json"`
+Three handlers matching the three public C++ functions:
+- `handle_widget_build_from_json` -- calls `unreal.WidgetBlueprintBuilderLibrary.build_widget_from_json(package_path, asset_name, json_string)`
+- `handle_widget_rebuild_from_json` -- loads asset, calls `rebuild_widget_from_json(widget_bp, json_string)`
+- `handle_widget_validate_json` -- calls `validate_widget_json(json_string)`
+
+These use **dedicated handlers** (not `python_proxy`), matching the pattern used by `blueprint_create`, `blueprint_compile`, etc. The existing `blueprint_build_from_json` tool uses `python_proxy`, but for widgets we use dedicated handlers because we have three distinct operations with different parameter shapes.
+
+Registered in `router.py`:
+- `"widget_build_from_json"` -> `handle_widget_build_from_json`
+- `"widget_rebuild_from_json"` -> `handle_widget_rebuild_from_json`
+- `"widget_validate_json"` -> `handle_widget_validate_json`
 
 ### TypeScript tools
 
@@ -622,12 +664,12 @@ Tools:
 - `widget_blueprint_rebuild_from_json` -- rebuild existing widget blueprint
 - `widget_blueprint_validate_json` -- dry-run validation
 
-Mirrors existing blueprint tool pattern. No new mental model.
+Each tool maps to its corresponding command in the router. Mirrors existing blueprint tool pattern.
 
 ### index.ts changes
 
 - Import and register widget tools
-- Add `widget_blueprint_build_from_json` to `modifyingCommands` set
+- Add `widget_blueprint_build_from_json` and `widget_blueprint_rebuild_from_json` to `modifyingCommands` set
 
 ## UE4 Engine Types Referenced
 
@@ -641,4 +683,5 @@ Mirrors existing blueprint tool pattern. No new mental model.
 - UCanvasPanel, UTextBlock, UButton, UImage, UBorder, UVerticalBox, UHorizontalBox, UOverlay, USizeBox, USpacer
 
 ### Slot Classes
-- UCanvasPanelSlot, UVerticalBoxSlot, UHorizontalBoxSlot, UOverlaySlot, UBorderSlot, UButtonSlot, USizeBoxSlot
+- UCanvasPanelSlot, UVerticalBoxSlot, UHorizontalBoxSlot, UOverlaySlot, UBorderSlot, USizeBoxSlot
+- Note: UButtonSlot may not exist in UE4.27. Button children may get UPanelSlot base. Verify at implementation time.
