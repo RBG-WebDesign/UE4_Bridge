@@ -61,11 +61,13 @@ Full status payload. Runs on HTTP background thread, reads thread-safe module-le
   "success": true,
   "data": {
     "version": "0.1.0",
+    "protocol_version": 1,
     "bridge": {
       "running": true,
       "port": 8080,
       "uptime_sec": 123.4,
-      "total_requests": 142
+      "total_requests": 142,
+      "server_time": 1700000000.456
     },
     "last_event": {
       "timestamp": 1700000000.123,
@@ -182,12 +184,15 @@ class FBridgeStatusService
 **Polling behavior:**
 
 - Default interval: 1 second
+- HTTP timeout: 2 seconds (`Request->SetTimeout(2.0f)`) -- prevents request pileups and defines failure latency clearly
 - If `bRequestInFlight` is true, skip the tick (prevents request stacking)
 - On success: parse JSON, update state, set `bHttpReachable = true`, `bStatusValid = true`, `ConsecutiveFailures = 0`, `LastSuccessTime = FPlatformTime::Seconds()`
 - On HTTP failure: set `bHttpReachable = false`, `bStatusValid = false`, increment `ConsecutiveFailures`, set `LastError` to error description. Do NOT clear stale data (TotalRequests, subsystem fields)
 - On JSON parse failure: set `bHttpReachable = true`, `bStatusValid = false`, increment `ConsecutiveFailures`, set `LastError`
 - Backoff: after 3 consecutive failures, slow to 5s polling. Reset to 1s on first success
 - Cancel: `CancelActiveRequest()` cancels any in-flight request before sending new one (used by reconnect button)
+- Cleanup: on every response completion or cancel, always `ActiveRequest.Reset()` and `bRequestInFlight = false`. Stale request pointers cause silent bugs.
+- **Restart race condition:** after `restart_listener`, the next 1-2 polls may fail (expected) or hit a partially restarted server. UI stays in Disconnected until a clean success -- do not flash yellow/green prematurely.
 
 **Activity log ring buffer:**
 
@@ -229,8 +234,8 @@ Disconnected state:
 ```
 
 - Colored dot: `SImage` with green/yellow/red brush
-- "Last seen" computed: `FPlatformTime::Seconds() - LastSuccessTime`, updated on UI tick
-- Reconnect button: cancels active request, resets `ConsecutiveFailures` to 0, forces immediate poll. UI shows "Connecting..." text (this is a display string, not a fourth state -- the underlying state remains Disconnected until the poll succeeds)
+- "Last seen" computed: `FPlatformTime::Seconds() - LastSuccessTime`, updated on UI tick. If `LastSuccessTime == 0.0` (never connected), display "Never" instead of a large number.
+- Reconnect button: cancels active request, resets `ConsecutiveFailures` to 0, forces immediate poll. UI shows "Connecting..." text (this is a display string driven by a transient `bool bIsManuallyReconnecting` on the UI widget, NOT a fourth state in `FBridgeState` -- the underlying state remains Disconnected until the poll succeeds)
 
 #### Section 2: Subsystem Cards (middle)
 
@@ -265,7 +270,7 @@ Each row:
 [10:20:58]  blueprint_build    error     --
 ```
 
-Newest entries at top. Error rows in red/orange text. Clicking could expand to show `LastError` message (v2 feature -- v1 just shows the one-liner).
+Newest entries at top (insert at index 0, not append + reverse). Error rows in red/orange text. Clicking could expand to show `LastError` message (v2 feature -- v1 just shows the one-liner).
 
 #### Section 4: Quick Actions (bottom bar)
 
@@ -342,12 +347,13 @@ Add to `PrivateDependencyModuleNames`:
 
 ### Pass 1: Foundation
 - Update `.uplugin` (type, loading phase)
-- Update `Build.cs` (dependencies)
+- Update `Build.cs` (dependencies -- explicitly include `Slate`, `SlateCore` even if UE4 template added them, to be safe)
 - `FBridgeState` + `FBridgeLogEntry` structs
-- `FBridgeStatusService` with HTTP polling, JSON parsing, state updates
+- `FBridgeStatusService` with HTTP polling (2s timeout), JSON parsing, state updates
 - Python `/status` + `/ping` endpoints
 - Module startup registers tab spawner
 - Tab shows live connection status text (no fancy layout yet)
+- Log parsed `/status` JSON to Output Log once on first successful poll (confirms parsing works before touching UI)
 - Verify: open tab, see "Connected" or "Disconnected" updating live
 
 ### Pass 2: Dashboard UI
