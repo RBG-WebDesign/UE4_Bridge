@@ -105,8 +105,8 @@ All three GET endpoints use the same `{success: bool, data: any, error?: string}
 - `_process_command_queue` updates last-event vars after each command (with `time.time()` timestamp and elapsed duration)
 - `do_GET` routes by path: `/ping`, `/status`, `/` (default)
 - Subsystem detection: cached bools set once at startup on the game thread, read by HTTP thread. If a subsystem is loaded after listener startup (e.g., hot-reload), the cached value stays stale until editor restart. This is a known v1 limitation -- periodic re-detection is a v2 improvement.
-  - `blueprint_builder.loaded`: check if `UBlueprintGraphBuilderLibrary` class is available via `unreal.find_class()`
-  - `widget_blueprint_builder.loaded`: check if `UWidgetBlueprintBuilderLibrary` class is available via `unreal.find_class()`
+  - `blueprint_builder.loaded`: check if `UBlueprintGraphBuilderLibrary` class is available via `getattr(unreal, 'BlueprintGraphBuilderLibrary', None)` (UE4.27 does not have `unreal.find_class()`)
+  - `widget_blueprint_builder.loaded`: check if `UWidgetBlueprintBuilderLibrary` class is available via `getattr(unreal, 'WidgetBlueprintBuilderLibrary', None)`
   - `shaderweave.registered`: bool flag set when ShaderWeave handler registers itself
 - All reads are from thread-safe counters or startup-cached bools -- no `unreal.*` calls on HTTP thread
 
