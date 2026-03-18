@@ -2,33 +2,45 @@
 #include "WidgetBuilder/WidgetBlueprintBuilder.h"
 #include "WidgetBlueprint.h"
 
-bool UWidgetBlueprintBuilderLibrary::BuildWidgetFromJSON(
+FString UWidgetBlueprintBuilderLibrary::BuildWidgetFromJSON(
 	const FString& PackagePath,
 	const FString& AssetName,
-	const FString& JsonString,
-	FString& OutError)
+	const FString& JsonString)
 {
 	UE_LOG(LogTemp, Log, TEXT("[WidgetBuilder] BuildWidgetFromJSON: path='%s', name='%s'"), *PackagePath, *AssetName);
 
+	FString Error;
 	FWidgetBlueprintBuilder Builder;
-	return Builder.Build(PackagePath, AssetName, JsonString, OutError);
+	if (!Builder.Build(PackagePath, AssetName, JsonString, Error))
+	{
+		return Error;
+	}
+	return TEXT("");
 }
 
-bool UWidgetBlueprintBuilderLibrary::RebuildWidgetFromJSON(
+FString UWidgetBlueprintBuilderLibrary::RebuildWidgetFromJSON(
 	UWidgetBlueprint* WidgetBlueprint,
-	const FString& JsonString,
-	FString& OutError)
+	const FString& JsonString)
 {
 	UE_LOG(LogTemp, Log, TEXT("[WidgetBuilder] RebuildWidgetFromJSON"));
 
+	FString Error;
 	FWidgetBlueprintBuilder Builder;
-	return Builder.Rebuild(WidgetBlueprint, JsonString, OutError);
+	if (!Builder.Rebuild(WidgetBlueprint, JsonString, Error))
+	{
+		return Error;
+	}
+	return TEXT("");
 }
 
-bool UWidgetBlueprintBuilderLibrary::ValidateWidgetJSON(
-	const FString& JsonString,
-	FString& OutError)
+FString UWidgetBlueprintBuilderLibrary::ValidateWidgetJSON(
+	const FString& JsonString)
 {
+	FString Error;
 	FWidgetBlueprintBuilder Builder;
-	return Builder.Validate(JsonString, OutError);
+	if (!Builder.Validate(JsonString, Error))
+	{
+		return Error;
+	}
+	return TEXT("");
 }
