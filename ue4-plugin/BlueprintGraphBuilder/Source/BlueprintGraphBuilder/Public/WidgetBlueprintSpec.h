@@ -44,7 +44,26 @@ struct FWidgetNodeSpec
 	TArray<FWidgetNodeSpec> Children;
 };
 
+struct FWidgetAnimationTrackSpec
+{
+	FString Type;  // "opacity" (v1), "translation", "scale" (future)
+
+	// Opacity track data (v1)
+	float FromOpacity = 0.0f;
+	float ToOpacity = 1.0f;
+	bool bHasOpacityData = false;
+};
+
+struct FWidgetAnimationSpec
+{
+	FString Name;
+	FString Target;
+	float Duration = 0.0f;
+	TArray<FWidgetAnimationTrackSpec> Tracks;
+};
+
 struct FWidgetBlueprintSpec
 {
 	FWidgetNodeSpec Root;
+	TArray<FWidgetAnimationSpec> Animations;
 };
