@@ -141,7 +141,9 @@ After Pass 6:
 8. Target: `if (ToPinRole == "exec")` -- **NEW** -- `PN_Execute`
 9. Target: `else` data fallback -- **NEW** -- `FindPinCaseInsensitive`
 10. Null guard on `TargetPin` -- unchanged
-11. `SourcePin->MakeLinkTo(TargetPin)` -- unchanged
+11. Direction guard: `SourcePin->Direction != EGPD_Output` -- **NEW**
+12. Direction guard: `TargetPin->Direction != EGPD_Input` -- **NEW**
+13. `SourcePin->MakeLinkTo(TargetPin)` -- unchanged
 
 ### Source side after Pass 6
 
@@ -258,6 +260,28 @@ if (!TargetPin)
 ```
 
 The data fallback branches do not add their own `continue` before the null guard -- the null guard below catches both cases. This keeps the fallthrough path identical whether the pin was found or not.
+
+After both null guards pass, add direction validation before `MakeLinkTo`:
+
+```cpp
+if (SourcePin->Direction != EGPD_Output)
+{
+    UE_LOG(LogTemp, Warning,
+        TEXT("BuildBlueprintFromJSON: Source pin '%s' on node '%s' is not an output pin -- skipping"),
+        *FromPinRole, *FromNodeId);
+    continue;
+}
+
+if (TargetPin->Direction != EGPD_Input)
+{
+    UE_LOG(LogTemp, Warning,
+        TEXT("BuildBlueprintFromJSON: Target pin '%s' on node '%s' is not an input pin -- skipping"),
+        *ToPinRole, *ToNodeId);
+    continue;
+}
+```
+
+This catches reversed connections (e.g., `"from": "break.X", "to": "make.Y"` where `Y` is an output) before UE has a chance to silently accept them or produce a confusing compile error. Exec pins have direction too (`EGPD_Output` on `PN_Then`, `EGPD_Input` on `PN_Execute`), so this check covers both exec and data connections without special-casing.
 
 ---
 
