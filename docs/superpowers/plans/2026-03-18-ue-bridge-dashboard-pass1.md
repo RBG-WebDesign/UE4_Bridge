@@ -932,7 +932,8 @@ void FBridgeStatusService::OnStatusResponse(
 	}
 
 	// Check standard {success, data} shape
-	bool bSuccess = RootObj->GetBoolField(TEXT("success"));
+	// Guard: GetBoolField crashes if field is missing
+	bool bSuccess = RootObj->HasField(TEXT("success")) && RootObj->GetBoolField(TEXT("success"));
 	const TSharedPtr<FJsonObject>* DataObjPtr = nullptr;
 
 	if (!bSuccess || !RootObj->TryGetObjectField(TEXT("data"), DataObjPtr) || !DataObjPtr)
