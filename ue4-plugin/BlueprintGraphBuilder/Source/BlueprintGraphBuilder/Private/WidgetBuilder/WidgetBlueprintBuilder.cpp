@@ -4,6 +4,7 @@
 #include "WidgetBlueprintAssetFactory.h"
 #include "WidgetTreeBuilder.h"
 #include "WidgetClassRegistry.h"
+#include "WidgetChildAttachment.h"
 #include "WidgetBlueprintFinalizer.h"
 #include "WidgetBlueprintSpec.h"
 #include "WidgetBlueprint.h"
@@ -49,7 +50,8 @@ bool FWidgetBlueprintBuilder::Build(
 	Tree->RootWidget = nullptr;
 
 	// Step 5: Build tree
-	FWidgetTreeBuilder TreeBuilder(Registry);
+	FWidgetChildAttachment ChildAttachment;
+	FWidgetTreeBuilder TreeBuilder(Registry, ChildAttachment);
 	UWidget* Root = TreeBuilder.BuildTree(WidgetBP, Tree, Spec, OutError);
 	if (!Root)
 	{
@@ -104,7 +106,8 @@ bool FWidgetBlueprintBuilder::Rebuild(
 	Tree->RootWidget = nullptr;
 
 	// Step 5-6: Build and assign
-	FWidgetTreeBuilder TreeBuilder(Registry);
+	FWidgetChildAttachment ChildAttachment;
+	FWidgetTreeBuilder TreeBuilder(Registry, ChildAttachment);
 	UWidget* Root = TreeBuilder.BuildTree(WidgetBlueprint, Tree, Spec, OutError);
 	if (!Root)
 	{
