@@ -44,7 +44,7 @@ Claude Code --stdio--> MCP Server (TypeScript) --HTTP:8080--> Python Listener (i
 - `validation.ts` -- shared validation helpers
 - `tools/` -- one file per tool group (actors, blueprints, level, materials, operations, project, system, viewport). Each exports a `create*Tools(client)` factory returning `ToolDefinition[]`.
 
-`index.ts` collects all tool arrays, builds a lookup map, and tracks which commands are "modifying" (recorded in history for undo). Modifying commands: actor_spawn, actor_modify, actor_delete, actor_duplicate, actor_organize, actor_snap_to_socket, batch_spawn, material_create, material_apply, blueprint_create, blueprint_compile, level_save.
+`index.ts` collects all tool arrays, builds a lookup map, and tracks which commands are "modifying" (recorded in history for undo). Modifying commands: actor_spawn, actor_modify, actor_delete, actor_duplicate, actor_organize, actor_snap_to_socket, batch_spawn, material_create, material_apply, blueprint_create, blueprint_compile, blueprint_build_from_json, level_save.
 
 ### Python Listener (`unreal-plugin/Content/Python/mcp_bridge/`)
 - `listener.py` -- HTTP server on background thread, queues commands to game thread via `register_slate_post_tick_callback`
