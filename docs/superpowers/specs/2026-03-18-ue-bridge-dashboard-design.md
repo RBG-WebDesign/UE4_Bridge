@@ -46,10 +46,10 @@ SBridgeStatusIndicator (Slate)
 
 ### `GET /ping`
 
-Fast health check. No game-thread work.
+Fast health check. No game-thread work. Used by C++ service for initial connection probe on startup (before full `/status` polling begins).
 
 ```json
-{"ok": true}
+{"success": true, "data": {"ok": true}}
 ```
 
 ### `GET /status`
@@ -58,28 +58,34 @@ Full status payload. Runs on HTTP background thread, reads thread-safe module-le
 
 ```json
 {
-  "ok": true,
-  "version": "0.1.0",
-  "bridge": {
-    "running": true,
-    "port": 8080,
-    "uptime_sec": 123.4,
-    "total_requests": 142
-  },
-  "last_event": {
-    "timestamp": 1700000000.123,
-    "command": "actor_spawn",
-    "result": "success",
-    "duration_ms": 132
-  },
-  "subsystems": {
-    "blueprint_builder": {
-      "loaded": true,
-      "version": "0.1.0"
+  "success": true,
+  "data": {
+    "version": "0.1.0",
+    "bridge": {
+      "running": true,
+      "port": 8080,
+      "uptime_sec": 123.4,
+      "total_requests": 142
     },
-    "shaderweave": {
-      "registered": true,
-      "active_sessions": 0
+    "last_event": {
+      "timestamp": 1700000000.123,
+      "command": "actor_spawn",
+      "result": "success",
+      "duration_ms": 132
+    },
+    "subsystems": {
+      "blueprint_builder": {
+        "loaded": true,
+        "version": "0.1.0"
+      },
+      "widget_blueprint_builder": {
+        "loaded": true,
+        "version": "0.1.0"
+      },
+      "shaderweave": {
+        "registered": true,
+        "active_sessions": 0
+      }
     }
   }
 }
@@ -87,15 +93,18 @@ Full status payload. Runs on HTTP background thread, reads thread-safe module-le
 
 ### `GET /` (existing)
 
-Backward-compatible health check. Unchanged.
+Backward-compatible health check. Unchanged. Uses the standard `{success, data, error}` shape.
+
+All three GET endpoints use the same `{success: bool, data: any, error?: string}` response shape that the rest of the system uses. The `/status` data is nested inside `data`, not at the top level.
 
 ### Python implementation notes
 
 - New module-level vars in `listener.py`: `_start_time` (set in `start()`), `_last_event_timestamp`, `_last_event_command`, `_last_event_result`, `_last_event_duration_ms`
 - `_process_command_queue` updates last-event vars after each command (with `time.time()` timestamp and elapsed duration)
 - `do_GET` routes by path: `/ping`, `/status`, `/` (default)
-- Subsystem detection: cached bools set once at startup on the game thread, read by HTTP thread
-  - `blueprint_builder.loaded`: check if `BlueprintGraphBuilderLibrary` class is available
+- Subsystem detection: cached bools set once at startup on the game thread, read by HTTP thread. If a subsystem is loaded after listener startup (e.g., hot-reload), the cached value stays stale until editor restart. This is a known v1 limitation -- periodic re-detection is a v2 improvement.
+  - `blueprint_builder.loaded`: check if `UBlueprintGraphBuilderLibrary` class is available via `unreal.find_class()`
+  - `widget_blueprint_builder.loaded`: check if `UWidgetBlueprintBuilderLibrary` class is available via `unreal.find_class()`
   - `shaderweave.registered`: bool flag set when ShaderWeave handler registers itself
 - All reads are from thread-safe counters or startup-cached bools -- no `unreal.*` calls on HTTP thread
 
@@ -129,9 +138,12 @@ struct FBridgeState
     bool bShaderWeaveRegistered = false;
     int32 ShaderWeaveActiveSessions = 0;
 
+    // Subsystems (continued)
+    bool bWidgetBlueprintBuilderLoaded = false;
+    FString WidgetBlueprintBuilderVersion;
+
     // Diagnostics
     int32 ConsecutiveFailures = 0;
-    FString ListenerId;
     FString LastError;
 };
 ```
@@ -156,7 +168,7 @@ class FBridgeStatusService
     FDelegateHandle TickerHandle;
     bool bRequestInFlight = false;
 
-    void StartPolling();    // 1s interval via FTSTicker
+    void StartPolling();    // 1s interval via FTicker::GetCoreTicker().AddTicker()
     void StopPolling();
     bool Tick(float DeltaTime);
     void SendStatusRequest();
@@ -182,6 +194,7 @@ class FBridgeStatusService
 - `FBridgeStatusService` maintains a `TArray<FBridgeLogEntry>` ring buffer (max 50 entries)
 - New entries pushed when `last_event.timestamp` changes between polls (comparison by timestamp, not command string)
 - Each entry: timestamp, command, result, duration_ms
+- **Known v1 limitation:** `last_event` is a single-event field, not a queue. If two or more commands complete between polls (within the 1s interval), only the last one appears. The `TotalRequests` counter can detect missed events (if it jumps by more than 1 between polls), but the individual missed commands are not recoverable. A `recent_events` array is a v2 improvement.
 
 ```cpp
 struct FBridgeLogEntry
@@ -217,11 +230,11 @@ Disconnected state:
 
 - Colored dot: `SImage` with green/yellow/red brush
 - "Last seen" computed: `FPlatformTime::Seconds() - LastSuccessTime`, updated on UI tick
-- Reconnect button: cancels active request, resets `ConsecutiveFailures` to 0, forces immediate poll, immediately sets UI to "Connecting..." state
+- Reconnect button: cancels active request, resets `ConsecutiveFailures` to 0, forces immediate poll. UI shows "Connecting..." text (this is a display string, not a fourth state -- the underlying state remains Disconnected until the poll succeeds)
 
 #### Section 2: Subsystem Cards (middle)
 
-Three horizontal `SBorder` boxes, one per subsystem.
+Four horizontal `SBorder` boxes, one per subsystem.
 
 **UE Bridge (Core)**
 - Status: Running / Down (green/red text)
@@ -229,6 +242,10 @@ Three horizontal `SBorder` boxes, one per subsystem.
 - Last: `actor_spawn` -- success (132ms)
 
 **Blueprint Builder**
+- Status: Loaded / Not found
+- Version: 0.1.0
+
+**Widget Blueprint Builder**
 - Status: Loaded / Not found
 - Version: 0.1.0
 
@@ -256,22 +273,22 @@ Four `SButton` widgets:
 
 | Button | Action |
 |---|---|
-| Restart Listener | POST `{"command": "restart_listener"}`, immediately set state to disconnected (don't wait for timeout), then resume polling |
+| Restart Listener | POST `{"command": "restart_listener"}`, immediately set `bHttpReachable = false` (don't wait for timeout -- the server we're connected to is dying), then resume normal polling. The POST response will likely be lost (connection reset) -- treat a dropped connection as the expected success case, not an error. |
 | Test Connection | Cancel active request, force immediate `/status` poll |
 | Open Output Log | `FGlobalTabmanager::Get()->TryInvokeTab(FName("OutputLog"))` |
 | Clear Log | Clear activity ring buffer |
 
 ### Status Bar Indicator: `SBridgeStatusIndicator`
 
-Small widget registered in the level editor status bar via `FLevelEditorModule::GetStatusBarExtensibilityManager()`.
+A toolbar button registered via `FLevelEditorModule::GetToolBarExtensibilityManager()`. UE4.27 does not have `GetStatusBarExtensibilityManager()`, so we use the toolbar extension point instead. This places a small button in the level editor toolbar area.
 
-Visual: colored circle + "Bridge" text.
+Visual: colored circle icon + "Bridge" text label on the button.
 
 ```
 [green dot] Bridge
 ```
 
-Tooltip on hover:
+Tooltip on hover (via `SetToolTipText` or `SToolTip`):
 ```
 Connected (localhost:8080)
 Last seen: 0.3s ago
@@ -279,6 +296,8 @@ Total requests: 142
 ```
 
 Click: `FGlobalTabmanager::Get()->TryInvokeTab(FName("UEBridgeDashboard"))` (opens/focuses dashboard tab).
+
+The button icon color updates based on connection state (green/yellow/red). Implementation uses `FSlateIcon` with a custom brush or the built-in circle icons with tint.
 
 ## File Structure
 
@@ -355,7 +374,7 @@ Add to `PrivateDependencyModuleNames`:
 | Polling interval | 1s default | Faster/slower | Responsive without spam, simple backoff on failure |
 | Activity log source | `last_event.timestamp` diff | `LastCommand` string diff | Handles repeated commands, timing-accurate |
 | Plugin location | Separate from BlueprintGraphBuilder | Inside BlueprintGraphBuilder | Dashboard monitors the whole bridge, not just blueprints; independent packaging |
-| Status bar | LevelEditor extensibility | Toolbar button | Always visible, low visual weight, standard UE4 pattern |
+| Status bar | Toolbar button via `GetToolBarExtensibilityManager()` | `GetStatusBarExtensibilityManager()` | Status bar API does not exist in UE4.27; toolbar extension is the available equivalent |
 
 ## Out of Scope
 
