@@ -177,14 +177,16 @@ Anim->MovieScene = MovieScene;
 ```cpp
 FFrameRate TickResolution = MovieScene->GetTickResolution();
 FFrameNumber EndFrame = (AnimSpec.Duration * TickResolution).FloorToFrame();
+// Minimum 1 frame -- prevents degenerate animations from very small durations
+EndFrame = FMath::Max(EndFrame, FFrameNumber(1));
 MovieScene->SetPlaybackRange(FFrameNumber(0), EndFrame.Value);
 ```
 
-Time conversion note: UE4.27 MovieScene uses frame numbers internally. `GetTickResolution()` returns the tick resolution (typically 24000 fps). Multiply duration in seconds by tick resolution to get frame numbers.
+Time conversion note: UE4.27 MovieScene uses frame numbers internally. `GetTickResolution()` returns the tick resolution (typically 24000 fps). Multiply duration in seconds by tick resolution to get frame numbers. Minimum duration resolves to at least 1 frame.
 
 ### Step 3: Bind widget
 
-Primary approach -- direct binding insertion:
+Implementation must use `FWidgetAnimationBinding`. This is the UMG-native binding system. Do not mix with MovieScene possessable bindings.
 
 ```cpp
 FWidgetAnimationBinding Binding;
@@ -193,13 +195,13 @@ Binding.AnimationGuid = FGuid::NewGuid();
 Anim->AnimationBindings.Add(Binding);
 ```
 
-Fallback if `AnimationBindings` is not directly accessible:
+If engine access prevents direct `FWidgetAnimationBinding` use (private fields, missing headers), switch the entire implementation to MovieScene possessables as a documented alternate path. Do not mix both systems -- pick one and commit.
+
+Fallback (alternate implementation, not runtime fallback):
 
 ```cpp
 FGuid Guid = MovieScene->AddPossessable(AnimSpec.Target, UWidget::StaticClass());
 ```
-
-Use whichever compiles. The goal is: track is attached to widget name, `PlayAnimation` works.
 
 ### Step 4: Create opacity track
 
@@ -231,6 +233,11 @@ Channel API note: The exact method signature varies across UE4.27 versions. If `
 ```cpp
 WidgetBP->Animations.Add(Anim);
 ```
+
+Ensure created `UWidgetAnimation` objects are properly outered to the WidgetBlueprint (the `NewObject` outer in Step 1 handles this) and flagged so they serialize and appear in the editor Animations panel. If animations build but don't show up in editor, check:
+- Object flags (may need `RF_Transactional`)
+- `WidgetBP->Modify()` call before adding
+- That the animation is outered to the WidgetBlueprint, not the package
 
 ## Required Module Dependencies
 
@@ -297,6 +304,7 @@ static bool ValidateAnimations(
 8. Unknown track type is a validation error (not a warning)
 9. Duplicate track types within a single animation are rejected (one opacity track per animation in v1)
 10. `from == to` is valid (no-op animation, not rejected)
+11. Multiple animations may target the same widget and property. Conflict resolution is left to gameplay code (caller decides which animation to play). This is not a validation error.
 
 ### Wiring into validation flow
 
@@ -449,7 +457,7 @@ Track must call `SetPropertyNameAndPath("RenderOpacity", "RenderOpacity")` or eq
 
 ### Risk 4: Widget bindability (LOW)
 
-Widgets must be findable by name for animation binding. The builder already assigns names via `ConstructWidget<UWidget>(WidgetClass, FName(*Name))`. If binding fails silently at runtime (animation plays but nothing moves), the widget may need to be marked as a variable. In UMG, this is controlled by `UWidget::bIsVariable`. The animation builder should set `bIsVariable = true` on any widget that is an animation target. This is a low-risk addition -- if the field is not accessible or not needed, skip it. But try it first since the UMG designer does this automatically for animated widgets.
+Widgets must be findable by name for animation binding. The builder already assigns names via `ConstructWidget<UWidget>(WidgetClass, FName(*Name))`. If binding fails silently at runtime (animation plays but nothing moves), the widget may need to be marked as a variable. In UMG, this is controlled by `UWidget::bIsVariable`. The animation builder should set `bIsVariable = true` **only on widgets referenced by animations**, not on all widgets. Do this during the animation build phase, not during tree construction. This keeps the builder deterministic and avoids side effects on unrelated widgets. If the field is not accessible, skip it -- but try it first since the UMG designer does this automatically for animated widgets.
 
 ## Future Passes (design only, do not implement)
 
