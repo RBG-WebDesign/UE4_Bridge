@@ -1,11 +1,13 @@
 #include "WidgetTreeBuilder.h"
 #include "WidgetClassRegistry.h"
+#include "WidgetChildAttachment.h"
 #include "WidgetBlueprint.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Widget.h"
 
-FWidgetTreeBuilder::FWidgetTreeBuilder(const FWidgetClassRegistry& InClassRegistry)
+FWidgetTreeBuilder::FWidgetTreeBuilder(const FWidgetClassRegistry& InClassRegistry, FWidgetChildAttachment& InChildAttachment)
 	: ClassRegistry(InClassRegistry)
+	, ChildAttachment(InChildAttachment)
 {
 }
 
@@ -15,7 +17,6 @@ UWidget* FWidgetTreeBuilder::BuildTree(
 	const FWidgetBlueprintSpec& Spec,
 	FString& OutError)
 {
-	// Build root node with no parent
 	return BuildNode(WidgetBP, WidgetTree, Spec.Root, nullptr, Spec.Root.Name, OutError);
 }
 
@@ -45,8 +46,27 @@ UWidget* FWidgetTreeBuilder::BuildNode(
 
 	UE_LOG(LogTemp, Log, TEXT("[WidgetBuilder] %s: Constructed %s as '%s'"), *Path, *Spec.Type, *Spec.Name);
 
-	// Steps 3-6 (properties, attachment, slot, children) will be added in Pass 2+
-	// For Pass 1, root widget is returned directly without attachment (root is never attached)
+	// Step 3: Attach to parent (skip for root -- root is assigned to WidgetTree->RootWidget by caller)
+	if (Parent)
+	{
+		if (!ChildAttachment.AttachChild(Parent, Widget, Path, OutError))
+		{
+			return nullptr;
+		}
+	}
+
+	// Step 4: Recurse into children
+	for (int32 i = 0; i < Spec.Children.Num(); ++i)
+	{
+		const FWidgetNodeSpec& ChildSpec = Spec.Children[i];
+		FString ChildPath = FString::Printf(TEXT("%s.%s"), *Path, *ChildSpec.Name);
+
+		UWidget* Child = BuildNode(WidgetBP, WidgetTree, ChildSpec, Widget, ChildPath, OutError);
+		if (!Child)
+		{
+			return nullptr;
+		}
+	}
 
 	return Widget;
 }

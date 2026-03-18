@@ -7,11 +7,12 @@ class UWidgetBlueprint;
 class UWidgetTree;
 class UWidget;
 class FWidgetClassRegistry;
+class FWidgetChildAttachment;
 
 class FWidgetTreeBuilder
 {
 public:
-	FWidgetTreeBuilder(const FWidgetClassRegistry& InClassRegistry);
+	FWidgetTreeBuilder(const FWidgetClassRegistry& InClassRegistry, FWidgetChildAttachment& InChildAttachment);
 
 	UWidget* BuildTree(
 		UWidgetBlueprint* WidgetBP,
@@ -31,4 +32,5 @@ private:
 	);
 
 	const FWidgetClassRegistry& ClassRegistry;
+	FWidgetChildAttachment& ChildAttachment;
 };
