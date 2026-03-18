@@ -77,6 +77,8 @@ PrivateDependencyModuleNames.AddRange(new string[]
 });
 ```
 
+**Verification:** Confirm `UMGEditor` is the correct module name by checking that `D:/UE/UE_4.27/Engine/Source/Editor/UMGEditor/UMGEditor.Build.cs` exists. If the file is not found, search for the correct module name: `find "D:/UE/UE_4.27/Engine/Source/Editor" -name "*UMG*" -o -name "*Widget*Blueprint*"`. The module may be named `UMGEditor` or something else in 4.27.
+
 - [ ] **Step 2: Commit**
 
 ```bash
@@ -170,6 +172,8 @@ git commit -m "feat: add widget blueprint spec structs"
 
 #include "CoreMinimal.h"
 #include "WidgetBlueprintSpec.h"
+
+class UWidget;
 
 class FWidgetClassRegistry
 {
@@ -398,15 +402,15 @@ bool FWidgetBlueprintJsonParser::ParseWidgetNode(
     {
         for (int32 i = 0; i < ChildrenArray->Num(); ++i)
         {
-            const TSharedPtr<FJsonObject>* ChildObj = nullptr;
-            if (!(*ChildrenArray)[i]->TryGetObject(ChildObj) || !ChildObj)
+            const TSharedPtr<FJsonObject>& ChildObj = (*ChildrenArray)[i]->AsObject();
+            if (!ChildObj.IsValid())
             {
                 OutError = FString::Printf(TEXT("[WidgetBuilder] %s: Child %d is not a valid object"), *NodePath, i);
                 return false;
             }
 
             FWidgetNodeSpec ChildSpec;
-            if (!ParseWidgetNode(*ChildObj, ChildSpec, NodePath, OutError))
+            if (!ParseWidgetNode(ChildObj, ChildSpec, NodePath, OutError))
             {
                 return false;
             }
@@ -673,8 +677,9 @@ bool FWidgetBlueprintValidator::ValidateNode(
     else if (Node.Properties.Num() > 0)
     {
         // No properties defined for this type but some were provided
-        const FString FirstKey = TArray<FString>(Node.Properties.GetKeys().Array())[0];
-        OutError = FString::Printf(TEXT("[WidgetBuilder] %s: Unsupported property '%s' on %s"), *NodePath, *FirstKey, *Node.Type);
+        TArray<FString> Keys;
+        Node.Properties.GetKeys(Keys);
+        OutError = FString::Printf(TEXT("[WidgetBuilder] %s: Unsupported property '%s' on %s"), *NodePath, *Keys[0], *Node.Type);
         return false;
     }
 
@@ -691,12 +696,6 @@ bool FWidgetBlueprintValidator::ValidateNode(
 }
 ```
 
-Note: The property validation block that gets the first key from the map uses a somewhat awkward pattern. The implementer may need to adjust the syntax for `GetKeys()` in UE4.27 -- `TMap::GetKeys()` populates a provided `TArray<FString>&`. Adjust as:
-```cpp
-TArray<FString> Keys;
-Node.Properties.GetKeys(Keys);
-OutError = FString::Printf(TEXT("..."), *Keys[0], ...);
-```
 
 - [ ] **Step 3: Commit**
 
@@ -1033,7 +1032,7 @@ bool FWidgetBlueprintFinalizer::Finalize(
     {
         UPackage* Package = WidgetBlueprint->GetOutermost();
         FString PackageFilename = FPackageName::LongPackageNameToFilename(Package->GetName(), FPackageName::GetAssetPackageExtension());
-        bool bSaved = UPackage::SavePackage(Package, WidgetBlueprint, EObjectFlags::RF_Public | EObjectFlags::RF_Standalone, *PackageFilename);
+        bool bSaved = UPackage::SavePackage(Package, WidgetBlueprint, RF_Public | RF_Standalone, *PackageFilename);
         if (!bSaved)
         {
             OutError = FString::Printf(TEXT("[WidgetBuilder] Failed to save package to '%s'"), *PackageFilename);
@@ -1433,7 +1432,20 @@ Expected: `Success: True, Error: `
    - Designer tab shows no errors
    - Blueprint compiles (green checkmark in toolbar)
 
-- [ ] **Step 6: Test duplicate creation fails**
+- [ ] **Step 6: Test rebuild on existing asset**
+
+```python
+import unreal
+asset = unreal.load_asset('/Game/UI/TestWidget')
+result, error = unreal.WidgetBlueprintBuilderLibrary.rebuild_widget_from_json(asset, '{"root": {"type": "CanvasPanel", "name": "NewRoot"}}')
+print(f"Rebuild: {result}, Error: {error}")
+```
+
+Expected: `Rebuild: True, Error: `
+
+Reopen the asset in Widget Blueprint Editor and verify the root widget is now named "NewRoot".
+
+- [ ] **Step 7: Test duplicate creation fails**
 
 ```python
 result, error = unreal.WidgetBlueprintBuilderLibrary.build_widget_from_json('/Game/UI', 'TestWidget', '{"root": {"type": "CanvasPanel", "name": "RootCanvas"}}')
@@ -1442,7 +1454,7 @@ print(f"Success: {result}, Error: {error}")
 
 Expected: `Success: False, Error: [WidgetBuilder] Asset already exists at '/Game/UI/TestWidget'...`
 
-- [ ] **Step 7: Commit any runtime fixes**
+- [ ] **Step 8: Commit any runtime fixes**
 
 If any issues were found and fixed during testing:
 
