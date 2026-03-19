@@ -28,6 +28,13 @@ public class BlueprintGraphBuilder : ModuleRules
             "SlateCore",
             "MovieScene",
             "MovieSceneTracks",
+            "AIModule",
+            "GameplayTasks",
         });
+
+        if (Target.bBuildEditor)
+        {
+            PrivateDependencyModuleNames.Add("BehaviorTreeEditor");
+        }
     }
 }
