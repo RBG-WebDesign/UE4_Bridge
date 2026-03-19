@@ -32,7 +32,9 @@ def launch_pie(level_path: Optional[str] = None) -> bool:
         if subsystem is None:
             return False
         tc.reset_log_cursor()
-        subsystem.play_in_editor(in_editor=False)
+        # in_editor=True launches PIE in the editor viewport (required for get_pie_worlds() to work).
+        # in_editor=False would launch a standalone game process which is invisible to get_pie_worlds().
+        subsystem.play_in_editor(in_editor=True)
         return True
     except Exception:
         return False
@@ -136,10 +138,16 @@ def run_assertions(tests: List[PIETestSpec]) -> List[AssertionResult]:
     all_log_lines: List[str] = tc.read_new_log_lines()
     results: List[AssertionResult] = []
 
+    # Initialize frame before the loop so static analysis does not flag it as
+    # potentially unbound (both branches always assign it, but Python cannot prove this).
+    frame = tc.snapshot(pie_world)
+    all_log_lines += frame.log_lines_since_last
+
     for spec in tests:
         if spec.predicate == "survive":
             time.sleep(spec.timeout_seconds)
-            all_log_lines += tc.read_new_log_lines()
+            # snapshot() calls read_new_log_lines() internally; do not call it again
+            # separately or the cursor will advance twice with no lines on the second read.
             frame = tc.snapshot(pie_world)
             all_log_lines += frame.log_lines_since_last
         else:
