@@ -71,20 +71,71 @@ def apply_enemy_patrol(intent: IntentMap, spec: BuildSpec) -> BuildSpec:
         content_path=ai_path,
         blackboard_path=f"{ai_path}/BB_{intent.feature_name}_Enemy",
         root={
+            "id": "root_selector",
             "type": "Selector",
+            "name": "EnemyBehavior",
             "children": [
                 {
+                    "id": "chase_sequence",
                     "type": "Sequence",
+                    "name": "ChasePlayer",
+                    "decorators": [
+                        {
+                            "id": "has_target",
+                            "type": "Blackboard",
+                            "name": "HasTarget",
+                            "params": {
+                                "blackboard_key": "TargetActor",
+                                "condition": "IsSet",
+                            },
+                        },
+                    ],
                     "children": [
-                        {"type": "BTTask_MoveTo", "params": {}},
-                        {"type": "BTTask_Wait", "params": {"WaitTime": 2.0}},
+                        {
+                            "id": "move_to_target",
+                            "type": "MoveTo",
+                            "name": "ChaseTarget",
+                            "params": {
+                                "blackboard_key": "TargetActor",
+                                "acceptable_radius": 100.0,
+                            },
+                        },
                     ],
                 },
                 {
+                    "id": "patrol_sequence",
                     "type": "Sequence",
+                    "name": "Patrol",
+                    "decorators": [
+                        {
+                            "id": "no_target",
+                            "type": "Blackboard",
+                            "name": "NoTarget",
+                            "params": {
+                                "blackboard_key": "TargetActor",
+                                "condition": "IsNotSet",
+                            },
+                        },
+                    ],
                     "children": [
-                        {"type": "BTTask_MoveTo", "params": {}},
-                        {"type": "BTTask_Wait", "params": {"WaitTime": 1.0}},
+                        {
+                            "id": "move_to_patrol",
+                            "type": "MoveTo",
+                            "name": "GoToPatrolPoint",
+                            "params": {
+                                "blackboard_key": "PatrolLocation",
+                                "acceptable_radius": 50.0,
+                            },
+                        },
+                        {
+                            "id": "patrol_wait",
+                            "type": "Wait",
+                            "name": "WaitAtPoint",
+                            "params": {
+                                "wait_time": 2.0,
+                                "random_deviation": 1.0,
+                            },
+                        },
                     ],
                 },
             ],
