@@ -26,6 +26,7 @@ import { createMaterialTools } from "./tools/materials.js";
 import { createBlueprintTools } from "./tools/blueprints.js";
 import { createOperationsTools } from "./tools/operations.js";
 import { createPromptBrushTools } from "./tools/promptbrush.js";
+import { createGameplayTools } from "./tools/gameplay.js";
 import type { ToolDefinition } from "./types.js";
 
 async function main(): Promise<void> {
@@ -48,6 +49,7 @@ async function main(): Promise<void> {
     ...createBlueprintTools(client),
     ...createOperationsTools(client, history),
     ...createPromptBrushTools(client),
+    ...createGameplayTools(client),
   ];
 
   // Build a lookup map

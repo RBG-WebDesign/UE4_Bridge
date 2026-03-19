@@ -20,6 +20,7 @@ import { createMaterialTools } from "./tools/materials.js";
 import { createBlueprintTools } from "./tools/blueprints.js";
 import { createOperationsTools } from "./tools/operations.js";
 import { createPromptBrushTools } from "./tools/promptbrush.js";
+import { createGameplayTools } from "./tools/gameplay.js";
 async function main() {
     const client = new UnrealClient();
     const history = new OperationHistory();
@@ -35,6 +36,7 @@ async function main() {
         ...createBlueprintTools(client),
         ...createOperationsTools(client, history),
         ...createPromptBrushTools(client),
+        ...createGameplayTools(client),
     ];
     // Build a lookup map
     const toolMap = new Map();
