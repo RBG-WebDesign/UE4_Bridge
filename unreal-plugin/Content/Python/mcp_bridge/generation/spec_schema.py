@@ -334,3 +334,47 @@ class ClassResolutionCache:
     """
     class_paths: Dict[str, str] = field(default_factory=dict)
     # e.g. {"BP_Character": "/Game/Generated/Gameplay/BP_Character"}
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Prompt Interpreter
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ActorIntent:
+    """An actor/entity extracted from the user's prompt."""
+    name: str                    # e.g. "player", "enemy", "door", "coin"
+    role: str                    # "player" | "enemy" | "interactable" | "collectible" | "environment"
+    qualifiers: List[str] = field(default_factory=list)
+    # e.g. ["flying", "patrolling", "locked"]
+
+
+@dataclass
+class MechanicIntent:
+    """A gameplay mechanic extracted from the prompt."""
+    name: str                    # matches a key in MECHANIC_REGISTRY
+    # e.g. "player_movement", "collect_item", "door_trigger", "enemy_patrol"
+    params: Dict[str, Any] = field(default_factory=dict)
+    # mechanic-specific params, e.g. {"item_name": "coin", "count": 5}
+
+
+@dataclass
+class RelationshipIntent:
+    """A causal relationship between game elements."""
+    subject: str                 # e.g. "door"
+    verb: str                    # e.g. "opens", "spawns", "destroys", "activates"
+    trigger: str                 # e.g. "all coins collected", "player enters", "timer expires"
+    params: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IntentMap:
+    """Structured representation of what the user wants to build."""
+    genre: str                   # detected genre
+    feature_name: str            # derived from prompt or genre
+    description: str             # original prompt
+    actors: List[ActorIntent] = field(default_factory=list)
+    mechanics: List[MechanicIntent] = field(default_factory=list)
+    relationships: List[RelationshipIntent] = field(default_factory=list)
+    ui_requests: List[str] = field(default_factory=list)
+    # e.g. ["main_menu", "hud", "game_over", "pause_menu"]
