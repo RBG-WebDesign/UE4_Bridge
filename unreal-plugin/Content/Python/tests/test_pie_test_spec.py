@@ -30,6 +30,7 @@ def test_widget_visible() -> None:
     spec = PIETestSpec.from_string("widget_visible:WBP_HUD")
     assert spec.predicate == "widget_visible"
     assert spec.target == "WBP_HUD"
+    assert spec.expected is None
     _pass("widget_visible")
 
 
@@ -37,6 +38,7 @@ def test_log_contains() -> None:
     spec = PIETestSpec.from_string("log_contains:GameStarted")
     assert spec.predicate == "log_contains"
     assert spec.target == "GameStarted"
+    assert spec.expected is None
     _pass("log_contains")
 
 
@@ -57,9 +59,11 @@ def test_survive_with_seconds() -> None:
 
 
 def test_survive_default() -> None:
-    spec = PIETestSpec.from_string("survive:5")
+    spec = PIETestSpec.from_string("survive")
+    assert spec.predicate == "survive"
     assert spec.timeout_seconds == 5.0
-    _pass("survive:5 (default)")
+    assert spec.target is None
+    _pass("survive (bare default)")
 
 
 if __name__ == "__main__":
