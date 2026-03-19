@@ -91,6 +91,40 @@ def test_full_menu_game() -> None:
     _pass("full menu game")
 
 
+def test_prompt_to_spec_end_to_end() -> None:
+    """Verify the full pipeline works through prompt_to_spec()."""
+    from mcp_bridge.generation.prompt_to_spec import prompt_to_spec
+    spec = prompt_to_spec("make a horror game with a monster and hiding spots")
+    assert spec.genre == "horror"
+    bp_names = [b.name for b in spec.blueprints]
+    assert any("Character" in n for n in bp_names), f"no character: {bp_names}"
+    assert any("Enemy" in n for n in bp_names), f"no enemy: {bp_names}"
+    assert any("Hiding" in n or "Hide" in n for n in bp_names), f"no hiding: {bp_names}"
+    _pass("prompt_to_spec end-to-end")
+
+
+def test_puzzle_fighter_preserved() -> None:
+    """puzzle_fighter genre still uses the legacy template."""
+    from mcp_bridge.generation.prompt_to_spec import prompt_to_spec
+    spec = prompt_to_spec("make a puzzle fighter game")
+    assert spec.genre == "puzzle_fighter"
+    assert len(spec.blueprints) >= 15, f"puzzle_fighter should have many BPs, got {len(spec.blueprints)}"
+    _pass("puzzle_fighter preserved")
+
+
+def test_menu_system_regression() -> None:
+    """menu_system genre produces at least a main menu widget and game mode."""
+    from mcp_bridge.generation.prompt_to_spec import prompt_to_spec
+    spec = prompt_to_spec("make a menu system")
+    widget_names = [w.name for w in spec.widgets]
+    bp_names = [b.name for b in spec.blueprints]
+    assert any("MainMenu" in n or "Menu" in n for n in widget_names), \
+        f"expected main menu widget, got {widget_names}"
+    assert any("GameMode" in n for n in bp_names), \
+        f"expected game mode BP, got {bp_names}"
+    _pass("menu_system regression")
+
+
 if __name__ == "__main__":
     print("Running spec_assembler tests...")
     test_horror_game_has_enemy_and_player()
@@ -101,4 +135,7 @@ if __name__ == "__main__":
     test_acceptance_tests_generated()
     test_horror_with_hiding()
     test_full_menu_game()
+    test_prompt_to_spec_end_to_end()
+    test_puzzle_fighter_preserved()
+    test_menu_system_regression()
     print("All spec_assembler tests passed.")

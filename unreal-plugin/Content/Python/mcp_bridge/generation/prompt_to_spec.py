@@ -587,97 +587,24 @@ def _puzzle_fighter_spec(prompt: str) -> BuildSpec:
     return spec
 
 
-def _menu_system_spec(prompt: str) -> BuildSpec:
-    ui = "/Game/Generated/MenuSystem/UI"
-    gameplay = "/Game/Generated/MenuSystem/Gameplay"
-    maps = "/Game/Generated/MenuSystem/Maps"
-
-    spec = BuildSpec(
-        feature_name="MenuSystem",
-        genre="menu_system",
-        description=prompt,
-        placeholder_policy="generate",
-    )
-
-    spec.blueprints = [
-        BlueprintSpec("BP_MS_GameMode", "GameModeBase", gameplay),
-        BlueprintSpec("BP_MS_PlayerController", "PlayerController", gameplay),
-        BlueprintSpec("BP_MS_HUD", "HUD", gameplay),
-    ]
-
-    spec.widgets = [
-        WidgetSpec("WBP_MS_MainMenu", ui, _main_menu_widget_tree("MY GAME")),
-        WidgetSpec("WBP_MS_PauseMenu", ui, _pause_menu_widget_tree()),
-        WidgetSpec("WBP_MS_GameOver", ui, _game_over_widget_tree()),
-        WidgetSpec("WBP_MS_HUD", ui, _hud_widget_tree()),
-        WidgetSpec("WBP_MS_Settings", ui, _simple_canvas("Settings", "Settings")),
-    ]
-
-    spec.levels = [
-        LevelSpec(
-            "Map_MS_Main", maps,
-            actors=[
-                {"type": "DirectionalLight", "name": "Light",
-                 "location": {"x": 0, "y": 0, "z": 500}},
-            ],
-        ),
-    ]
-
-    spec.acceptance_tests = [
-        "All 3 Blueprint assets exist and compiled",
-        "All 5 Widget assets exist",
-        "Map_MS_Main exists",
-    ]
-    return spec
-
-
-def _generic_spec(prompt: str) -> BuildSpec:
-    path = "/Game/Generated/Generic"
-
-    spec = BuildSpec(
-        feature_name="GeneratedFeature",
-        genre="generic",
-        description=prompt,
-        placeholder_policy="generate",
-    )
-
-    spec.blueprints = [
-        BlueprintSpec("BP_GenericGameMode", "GameModeBase", path),
-        BlueprintSpec(
-            "BP_GenericActor", "Actor", path,
-            components=[{"name": "Root", "class": "SceneComponent"}],
-        ),
-    ]
-
-    spec.levels = [
-        LevelSpec(
-            "Map_Generic", path,
-            actors=[
-                {"type": "PlayerStart", "name": "Start",
-                 "location": {"x": 0, "y": 0, "z": 100}},
-                {"type": "DirectionalLight", "name": "Light",
-                 "location": {"x": 0, "y": 0, "z": 500}},
-            ],
-        ),
-    ]
-
-    spec.acceptance_tests = [
-        "BP_GenericGameMode exists and compiled",
-        "BP_GenericActor exists and compiled",
-        "Map_Generic exists",
-    ]
-    return spec
-
-
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
 def prompt_to_spec(prompt: str) -> BuildSpec:
-    """Convert a natural language prompt to a BuildSpec. Entry point for the pipeline."""
+    """Convert a natural language prompt to a BuildSpec.
+
+    Phase 2: uses intent extraction + mechanic composition for all genres
+    except puzzle_fighter, which retains its legacy template.
+    """
     genre = detect_genre(prompt)
+
+    # puzzle_fighter has the most complete legacy template -- keep it
     if genre == "puzzle_fighter":
         return _puzzle_fighter_spec(prompt)
-    if genre == "menu_system":
-        return _menu_system_spec(prompt)
-    return _generic_spec(prompt)
+
+    # All other genres go through the Phase 2 pipeline
+    from mcp_bridge.generation.intent_extractor import extract_intent
+    from mcp_bridge.generation.spec_assembler import assemble_spec
+    intent = extract_intent(prompt)
+    return assemble_spec(intent)
