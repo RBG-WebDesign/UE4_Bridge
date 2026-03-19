@@ -75,14 +75,14 @@ async function setup(): Promise<void> {
   }));
 
   server.setHandler("gameplay_run_acceptance_tests", (params) => {
-    const tests = (params.tests as string[]) ?? [];
+    const predicates = (params.tests as string[]) ?? [];
     return {
       success: true,
       data: {
-        total: tests.length,
-        passed: tests.length,
+        total: predicates.length,
+        passed: predicates.length,
         failed: 0,
-        results: tests.map((t) => {
+        results: predicates.map((t) => {
           const parts = t.split(":");
           return { predicate: parts[0], target: parts[1] ?? null, passed: true, observed: "mock" };
         }),
@@ -152,6 +152,8 @@ test("gameplay_telemetry_snapshot returns telemetry frame shape", async () => {
 test("gameplay_run_acceptance_tests rejects empty tests array (Zod validation)", async () => {
   const tool = toolMap.get("gameplay_run_acceptance_tests");
   if (!tool) throw new Error("Tool not found: gameplay_run_acceptance_tests");
+  // Zod validation is enforced by the MCP framework before handlers run.
+  // We verify it directly via safeParse() since callTool() bypasses the framework layer.
   const result = tool.inputSchema.safeParse({ tests: [] });
   assert(!result.success, "empty tests array should fail Zod validation");
 });
