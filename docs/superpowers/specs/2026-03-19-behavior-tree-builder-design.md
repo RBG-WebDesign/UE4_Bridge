@@ -60,10 +60,11 @@ All under `ue4-plugin/BlueprintGraphBuilder/Source/BlueprintGraphBuilder/`:
 
 | File | Change |
 |---|---|
-| `BlueprintGraphBuilder.Build.cs` | Add `AIModule`, `GameplayTasks` dependencies |
+| `BlueprintGraphBuilder.Build.cs` | Add `AIModule`, `GameplayTasks`, `BehaviorTreeEditor` dependencies |
 | `ai_generator.py` | Call `BuildBehaviorTreeFromJSON` after creating BT asset |
 | `enemy_patrol.py` | Upgrade `BehaviorTreeSpec.root` to full JSON schema |
-| `test_mechanics.py` | Add assertions for new root structure |
+| `spec_schema.py` | Update `BehaviorTreeSpec.root` docstring to match new JSON schema |
+| `test_mechanics.py` (existing at `unreal-plugin/Content/Python/tests/test_mechanics.py`) | Add assertions for new root structure (id, decorators, params) |
 
 ### No TypeScript changes
 
@@ -97,7 +98,7 @@ Every node has:
 - `params` -- node-specific parameters, parsed to `TMap<FString, FString>` at parse time.
 - `children` -- only valid for composite nodes. Tasks with children are errors.
 - `decorators` -- array of decorator nodes attached to this node.
-- `services` -- parsed and stored but ignored in MVP. Reserved for future use.
+- `services` -- parsed and stored but ignored in MVP. Reserved for future use. Service entries are accepted without type validation in MVP; future passes will validate service types against the registry.
 
 ### Example: Enemy patrol + chase
 
@@ -198,7 +199,7 @@ Every node has:
 
 **Blackboard decorator:**
 - `blackboard_key` (string) -- BB key to check.
-- `condition` (string) -- `"IsSet"` maps to `EBasicKeyOperation::Set`, `"IsNotSet"` maps to `EBasicKeyOperation::NotSet`. Invalid strings are hard errors.
+- `condition` (string) -- `"IsSet"` maps to `EBasicKeyOperation::Set`, `"IsNotSet"` maps to `EBasicKeyOperation::NotSet`. Invalid strings are hard errors. MVP supports only `EBasicKeyOperation`. Arithmetic operations (`Equal`, `Less`, `Greater`, etc. via `EArithmeticKeyOperation`) are deferred to a future pass.
 
 ### Execution order
 
@@ -298,11 +299,35 @@ Decorator attachment: Decorators defined on a composite node attach to that comp
 
 ### FBTEditorGraphSync
 
-Post-build step. Runs only if `GIsEditor` is true.
+Post-build step. Runs only if `GIsEditor` is true. The builder does NOT depend on editor graph sync -- this is a strictly post-build, one-way derivation.
 
-1. Check if `BehaviorTree->BTGraph` exists. If not, create it.
-2. Call the graph's reconstruction method to rebuild editor nodes from the runtime `RootNode` and its children.
-3. If sync fails, log a warning. The runtime tree remains valid and usable.
+Algorithm:
+
+1. Get or create the editor graph:
+   ```cpp
+   UBehaviorTreeGraph* BTGraph = Cast<UBehaviorTreeGraph>(BT->BTGraph);
+   if (!BTGraph)
+   {
+       BTGraph = CastChecked<UBehaviorTreeGraph>(
+           FBlueprintEditorUtils::CreateNewGraph(BT, TEXT("BehaviorTreeGraph"),
+               UBehaviorTreeGraph::StaticClass(), UEdGraphSchema_BehaviorTree::StaticClass()));
+       BT->BTGraph = BTGraph;
+   }
+   ```
+2. Clear existing editor graph nodes (remove all `UBTGraphNode` instances).
+3. For each runtime node (composites, tasks, decorators), create a `UBTGraphNode`:
+   ```cpp
+   UBTGraphNode* GraphNode = NewObject<UBTGraphNode>(BTGraph);
+   GraphNode->NodeInstance = RuntimeNode;
+   BTGraph->AddNode(GraphNode, /*bFromUI=*/false, /*bSelectNewNode=*/false);
+   ```
+4. Connect parent-child pins via `UEdGraphPin::MakeLinkTo()` following the composite's `Children` array order.
+5. For decorators, create `UBTGraphNode` and attach as sub-nodes of their parent graph node.
+6. Call `BTGraph->UpdateAsset()` or equivalent to finalize layout.
+
+If any step in sync fails, log a warning but do NOT fail the build. The runtime tree (`RootNode` and its children) is already committed and will execute correctly in PIE regardless of editor graph state.
+
+**Module dependency:** `BehaviorTreeEditor` is required for `UBehaviorTreeGraph`, `UBTGraphNode`, and `UEdGraphSchema_BehaviorTree`.
 
 ### BTBuilder::Build() orchestration
 
@@ -346,6 +371,7 @@ Build is atomic: if any phase fails, `RootNode` is never set.
 PrivateDependencyModuleNames.AddRange(new string[] {
     "AIModule",
     "GameplayTasks",
+    "BehaviorTreeEditor",
 });
 ```
 
@@ -365,7 +391,9 @@ public:
 };
 ```
 
-Returns empty string on success, error description on failure.
+Returns empty string on success, error description on failure. Follows the Widget builder's `FString` return convention, not the original Blueprint builder's `void` return. The `FString` pattern provides better error reporting to the Python caller.
+
+**Note:** The roadmap spec (`2026-03-18-gameplay-generator-roadmap-design.md`) uses stale param names (`accept_radius`, `BTTask_MoveTo` prefix) in its Phase 3b sketch. This design spec is authoritative.
 
 ---
 
@@ -400,6 +428,83 @@ Upgrade `BehaviorTreeSpec.root` to the full JSON schema:
   - OnEndOverlap: clear `TargetActor` on blackboard.
 - Add initialization logic to AIController BP:
   - OnBeginPlay: set `PatrolLocation` to actor's current location.
+
+Complete upgraded `BehaviorTreeSpec.root` for enemy_patrol:
+
+```python
+root={
+    "id": "root_selector",
+    "type": "Selector",
+    "name": "EnemyBehavior",
+    "children": [
+        {
+            "id": "chase_sequence",
+            "type": "Sequence",
+            "name": "ChasePlayer",
+            "decorators": [
+                {
+                    "id": "has_target",
+                    "type": "Blackboard",
+                    "name": "HasTarget",
+                    "params": {
+                        "blackboard_key": "TargetActor",
+                        "condition": "IsSet",
+                    },
+                },
+            ],
+            "children": [
+                {
+                    "id": "move_to_target",
+                    "type": "MoveTo",
+                    "name": "ChaseTarget",
+                    "params": {
+                        "blackboard_key": "TargetActor",
+                        "acceptable_radius": 100.0,
+                    },
+                },
+            ],
+        },
+        {
+            "id": "patrol_sequence",
+            "type": "Sequence",
+            "name": "Patrol",
+            "decorators": [
+                {
+                    "id": "no_target",
+                    "type": "Blackboard",
+                    "name": "NoTarget",
+                    "params": {
+                        "blackboard_key": "TargetActor",
+                        "condition": "IsNotSet",
+                    },
+                },
+            ],
+            "children": [
+                {
+                    "id": "move_to_patrol",
+                    "type": "MoveTo",
+                    "name": "GoToPatrolPoint",
+                    "params": {
+                        "blackboard_key": "PatrolLocation",
+                        "acceptable_radius": 50.0,
+                    },
+                },
+                {
+                    "id": "patrol_wait",
+                    "type": "Wait",
+                    "name": "WaitAtPoint",
+                    "params": {
+                        "wait_time": 2.0,
+                        "random_deviation": 1.0,
+                    },
+                },
+            ],
+        },
+    ],
+}
+```
+
+Node ID convention: `<role>_<action>` (e.g. `chase_sequence`, `move_to_target`). IDs must be unique within the tree.
 
 ---
 
@@ -445,3 +550,11 @@ Upgrade `BehaviorTreeSpec.root` to the full JSON schema:
 - No animation (Phase 3c).
 - No relationship wiring into BTs (future phase).
 - No TypeScript tool changes.
+
+---
+
+## Implementation Notes
+
+- When implementation begins, add Behavior Tree Builder to CLAUDE.md Active Workstreams table:
+  `| Behavior Tree Builder | ue4-plugin/BlueprintGraphBuilder/Private/BehaviorTreeBuilder/ | In progress | docs/superpowers/specs/2026-03-19-behavior-tree-builder-design.md |`
+- The old `BehaviorTreeSpec.root` format (using `BTTask_*` prefixed type names and `tasks` key) in `spec_schema.py` comments and `enemy_patrol.py` must be updated to the new schema before the C++ builder can consume it.
