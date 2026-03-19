@@ -108,9 +108,9 @@ static bool ValidateWidgetPropertyValues(
         }
     }
 
-    // Justification (EditableTextBox, RichTextBlock share same valid values)
+    // Justification (TextBlock, EditableTextBox, RichTextBlock share same valid values)
     static const TSet<FString> ValidJustification = { TEXT("Left"), TEXT("Center"), TEXT("Right") };
-    if (T == TEXT("EditableTextBox") || T == TEXT("RichTextBlock"))
+    if (T == TEXT("TextBlock") || T == TEXT("EditableTextBox") || T == TEXT("RichTextBlock"))
     {
         const TSharedPtr<FJsonValue>* JustVal = Props.Find(TEXT("justification"));
         if (JustVal && (*JustVal)->Type == EJson::String && !ValidJustification.Contains((*JustVal)->AsString()))
