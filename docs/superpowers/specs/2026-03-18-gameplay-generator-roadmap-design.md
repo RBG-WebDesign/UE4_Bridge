@@ -24,7 +24,7 @@ What is missing or shallow:
 | Import pipeline | No handler for importing external meshes/textures/skeletons |
 | Packaging validation | Cook labels generated but no cook execution or result validation |
 | Source-control writes | No checkout/lock before saving .uasset files |
-| Prompt interpreter | Keyword matching with hardcoded templates; does not produce unique specs |
+| Prompt interpreter | Keyword matching; produces same Blueprint set regardless of prompt |
 
 ## Three Planes
 
@@ -47,13 +47,25 @@ unreal-plugin/Content/Python/mcp_bridge/
     gameplay.py              -- PIE control, telemetry capture (new handler)
   generation/
     pie_harness.py           -- PIE launch, assertion runner
-    telemetry_capture.py     -- log scraping, AI state, possession
-    repair_engine.py         -- compile error parsing, targeted spec patching
+    telemetry_capture.py     -- log scraping, AI state, possession, class resolution cache
+    repair_engine.py         -- compile error parsing, spec and graph repair
     timeline_generator.py    -- Timeline asset creation and keyframe authoring
     import_pipeline.py       -- mesh/texture/skeleton import with reimport support
     cook_validator.py        -- cook subprocess trigger and log parser
+    reference_validator.py   -- redirector resolution and soft-reference integrity
+    intent_extractor.py      -- prompt -> IntentMap (actors, mechanics, relationships)
+    spec_assembler.py        -- IntentMap -> BuildSpec via mechanics registry
+    mechanics/               -- one file per mechanic, each returns BuildSpecFragment
+      __init__.py
+      player_movement.py
+      collect_item.py
+      door_trigger.py
+      enemy_patrol.py
+      hide_from_enemy.py
+      main_menu.py
+      game_over.py
   utils/
-    source_control.py        -- checkout, add, lock before .uasset writes
+    source_control.py        -- checkout_or_add, lock inspection before .uasset writes
 
 mcp-server/src/tools/
   gameplay.ts                -- TypeScript tool definitions for all gameplay_* commands
@@ -62,13 +74,15 @@ mcp-server/src/tools/
 ### Modified files
 
 ```
-generation/prompt_to_spec.py    -- replace keyword matching with structured interpreter
-generation/spec_schema.py       -- add TimelineSpec, PIETestSpec, IntentMap
+generation/prompt_to_spec.py    -- delegates to intent_extractor + spec_assembler
+generation/spec_schema.py       -- add TimelineSpec, PIETestSpec, IntentMap, IntentRelation,
+                                   BuildSpecFragment, ClassResolutionCache
 generation/ai_generator.py      -- BT node graph content via C++ plugin (see Phase 3b)
 generation/compile_loop.py      -- wire repair_engine into retry loop
-handlers/promptbrush.py         -- add PIE harness phase after asset generation
+handlers/promptbrush.py         -- add PIE harness phase after asset generation;
+                                   add reference validation phase before manifest write
 router.py                       -- register gameplay_* commands
-mcp-server/src/index.ts         -- register gameplay tools, add to modifyingCommands if needed
+mcp-server/src/index.ts         -- register gameplay tools
 ```
 
 ### Command namespace
@@ -85,75 +99,9 @@ definition in `mcp-server/src/tools/gameplay.ts` following the same pattern as
 | `gameplay_run_acceptance_tests` | gameplay.py | Run BuildSpec acceptance_tests against live PIE |
 | `gameplay_cook_validate` | gameplay.py | Trigger cook subprocess and return parsed errors |
 | `gameplay_import_asset` | gameplay.py | Import external file into content browser |
+| `gameplay_validate_references` | gameplay.py | Check and repair soft references and redirectors |
 
-Note: `gameplay_pie_simulate_input` is deferred. UE4.27 Python has no direct API for
-injecting input actions into a running PIE `PlayerController` from an external caller.
-This will be revisited if a viable workaround (e.g. a C++ plugin exposing an input
-injection subsystem) is identified.
-
-## Phased Roadmap
-
-### Phase 1 -- Validation Plane (PIE harness + telemetry)
-
-**What:** Add the ability to launch PIE, capture runtime state via log polling, and
-evaluate the `acceptance_tests` list in a BuildSpec against observed outcomes.
-
-**Why first:** Every other gap depends on knowing whether the game actually works.
-Compile success is not gameplay success.
-
-**UE4.27 Python API surface:**
-
-PIE control:
-- `unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).play_in_editor(in_editor=False)` -- launches PIE in a separate window, not in-editor, which avoids game-thread blocking
-- `unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).request_end_play_map()` -- ends PIE
-- PIE is asynchronous. After calling `play_in_editor()`, the harness polls the log file
-  for the string `"PIE: play in editor start"` (the exact string UE4.27 emits to the
-  output log when PIE is ready). Poll interval: 0.5s, max wait: 30s, implemented via
-  `register_slate_post_tick_callback` (the same mechanism the HTTP listener uses for
-  game-thread marshaling). If the marker is not found within 30s, `wait_for_pie_ready`
-  returns False and `run_assertions` fails all predicates with `observed: "PIE timeout"`.
-
-Log capture:
-- UE4.27 Python exposes `unreal.PythonLogOutputDevice` or the `unreal.log` system does
-  not provide a subscription API. Instead, log scraping reads the current session log file
-  directly from `unreal.Paths.project_log_dir() / ProjectName.log`. A cursor position is
-  stored per snapshot so only new lines since the last snapshot are returned.
-
-Runtime state:
-- `unreal.EditorLevelLibrary.get_all_level_actors()` -- iterate actors to find pawns and
-  AI controllers in the current level. Does not work during PIE (editor actors are separate
-  from PIE actors). During PIE, use `unreal.GameplayStatics.get_all_actors_of_class()`
-  called on the PIE world. Getting the PIE world: `unreal.EditorLevelLibrary.get_editor_world()`
-  returns the PIE world when PIE is active.
-- `unreal.GameplayStatics.get_player_controller(world, 0).get_controlled_pawn()` -- pawn possession check
-- Widget visibility: `unreal.WidgetBlueprintLibrary` does not expose a runtime widget
-  stack inspector. The `widget_visible` predicate is implemented by checking the output
-  log for a `[WidgetVisible:WBP_HUD]` log line, which the generated Widget Blueprint must
-  emit via a `PrintString` node on its Construct event. This is a convention the generation
-  pipeline follows: every generated Widget Blueprint emits `[WidgetVisible:<name>]` on Construct.
-
-**New files:**
-- `generation/pie_harness.py` -- `launch_pie()`, `stop_pie()`, `wait_for_pie_ready(timeout_s=30) -> bool`, `run_assertions(tests: List[str]) -> List[AssertionResult]`
-- `generation/telemetry_capture.py` -- `snapshot() -> TelemetryFrame` with fields: `log_lines_since_last` (new lines from log file), `possessed_pawn_class` (str or None), `ai_controller_states` (dict of actor name -> state), `fps` (float)
-- `handlers/gameplay.py` -- wraps harness and capture behind MCP commands
-
-**Predicate format:** `acceptance_tests: List[str]` entries are colon-delimited strings:
-
-```
-"pawn_possessed:BP_Character"       -- possessed pawn class name contains BP_Character
-"widget_visible:WBP_HUD"           -- log contains [WidgetVisible:WBP_HUD] since PIE start
-"log_contains:GameStarted"         -- log contains literal string GameStarted
-"ai_state:BP_Enemy:Patrol"         -- AI controller on actor named BP_Enemy* is in state Patrol
-"survive:5"                        -- PIE ran for 5 seconds without a Fatal: log line
-```
-
-The `survive:N` predicate (replaces `no_crash:5s`) waits N seconds then checks that no
-`Fatal:` or `Error: (Assertion failed)` line appeared in the log. If the editor crashes,
-the PIE session ends and the HTTP listener stops responding; `run_assertions` returns a
-timeout failure for all remaining predicates.
-
-**TypeScript:** `mcp-server/src/tools/gameplay.ts` defines all 6 gameplay commands
-with Zod schemas following the same pattern as `blueprints.ts`. Minimum schema fields:
+Minimum Zod schema fields per command:
 
 | Command | Required params | Optional params |
 |---|---|---|
@@ -161,17 +109,102 @@ with Zod schemas following the same pattern as `blueprints.ts`. Minimum schema f
 | `gameplay_pie_stop` | (none) | (none) |
 | `gameplay_telemetry_snapshot` | (none) | (none) |
 | `gameplay_run_acceptance_tests` | `tests: string[]` | `timeout_seconds: number` |
-| `gameplay_cook_validate` | `map_path: string` | `platform: string` |
+| `gameplay_cook_validate` | `map_path: string` | `platform: string`, `packages_only: boolean` |
 | `gameplay_import_asset` | `source_path: string`, `content_path: string` | `options: object` |
+| `gameplay_validate_references` | `manifest_path: string` | (none) |
 
-`gameplay_cook_validate` resolves the `UE4Editor-cmd.exe` path at runtime via
-`unreal.Paths.engine_dir()` + `"Binaries/Win64/UE4Editor-Cmd.exe"` inside the Python
-handler -- it is not a caller-supplied parameter.
+Note: `gameplay_pie_simulate_input` is deferred. UE4.27 Python has no direct API for
+injecting input actions into a running PIE `PlayerController` from an external caller.
+Revisit when a C++ input injection plugin is available.
+
+## Phased Roadmap
+
+### Phase 1 -- Validation Plane (PIE harness + telemetry)
+
+**What:** Add the ability to launch PIE, capture runtime state, and evaluate
+`acceptance_tests` in a BuildSpec against observed outcomes.
+
+**Why first:** Every other gap depends on knowing whether the game actually works.
+Compile success is not gameplay success.
+
+**UE4.27 Python API surface:**
+
+PIE control:
+- `unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).play_in_editor(in_editor=False)` -- launches PIE in a separate window, avoiding game-thread blocking
+- `unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).request_end_play_map()` -- ends PIE
+- PIE is asynchronous. After calling `play_in_editor()`, the harness polls the log file
+  for the string `"PIE: play in editor start"` (the exact string UE4.27 emits when PIE is
+  ready). Poll interval: 0.5s, max wait: 30s, via `register_slate_post_tick_callback`.
+  If the marker is not found within 30s, `wait_for_pie_ready` returns False and
+  `run_assertions` fails all predicates with `observed: "PIE timeout"`.
+
+PIE world access:
+- `unreal.EditorLevelLibrary` is for the **world editor** and explicitly should not be used
+  in PIE mode. Once PIE is active, use `unreal.EditorLevelLibrary.get_pie_worlds(False)`
+  or `unreal.EditorLevelLibrary.get_game_world()` to get the live game world.
+- All `GameplayStatics` calls must use this PIE world, not the editor world.
+- `unreal.GameplayStatics.get_player_controller(pie_world, 0).get_controlled_pawn()` -- possession check
+
+Log capture:
+- UE4.27 Python does not provide a log subscription API. Log scraping reads the current
+  session log file from `unreal.Paths.project_log_dir() + ProjectName + ".log"`.
+  A cursor position is stored per snapshot so only new lines since the last snapshot are returned.
+
+Widget visibility:
+- `unreal.WidgetBlueprintLibrary` does not expose a runtime widget stack inspector,
+  but `unreal.WidgetLibrary.get_all_widgets_of_class(pie_world, widget_class, ...)` does.
+- The `widget_visible` predicate uses two strategies:
+  1. **Direct runtime query** (preferred): resolve the widget class from the class resolution
+     cache and call `get_all_widgets_of_class`. If any instance is found and visible, pass.
+  2. **Log marker fallback**: if class resolution fails, check for `[WidgetVisible:<name>]`
+     in the log. Generated Widget Blueprints emit this line via a `PrintString` node on
+     their Construct event. This is a pipeline convention, not an API guarantee.
+
+Runtime class resolution cache:
+- Phase 1 introduces `ClassResolutionCache` (in `telemetry_capture.py`) that maps asset names
+  to resolved UClass objects and content paths. Populated during generation and reused by
+  assertions and repair. Avoids repeated `load_object` calls during PIE.
+
+**New files:**
+- `generation/pie_harness.py` -- `launch_pie()`, `stop_pie()`, `wait_for_pie_ready(timeout_s=30) -> bool`, `run_assertions(tests: List[PIETestSpec]) -> List[AssertionResult]`
+- `generation/telemetry_capture.py` -- `snapshot(pie_world) -> TelemetryFrame`, `ClassResolutionCache`
+- `handlers/gameplay.py` -- wraps harness and capture behind MCP commands
+
+**Predicate format:** `acceptance_tests` entries use a structured `PIETestSpec` dataclass:
+
+```python
+@dataclass
+class PIETestSpec:
+    predicate: str           # "pawn_possessed", "widget_visible", "log_contains",
+                             # "ai_state", "survive"
+    target: Optional[str]    # class name, widget name, log string, actor name
+    expected: Optional[str]  # expected state value for ai_state
+    timeout_seconds: float = 5.0
+```
+
+String shorthand in `acceptance_tests: List[str]` is still supported for backwards
+compatibility and parsed into `PIETestSpec` objects at runtime:
+
+```
+"pawn_possessed:BP_Character"     -> PIETestSpec("pawn_possessed", "BP_Character")
+"widget_visible:WBP_HUD"         -> PIETestSpec("widget_visible", "WBP_HUD")
+"log_contains:GameStarted"       -> PIETestSpec("log_contains", "GameStarted")
+"ai_state:BP_Enemy:Patrol"       -> PIETestSpec("ai_state", "BP_Enemy", expected="Patrol")
+"survive:5"                      -> PIETestSpec("survive", timeout_seconds=5.0)
+```
+
+The `survive` predicate waits N seconds then checks that no `Fatal:` or
+`Error: (Assertion failed)` line appeared in the log. If PIE crashes and the HTTP
+listener stops responding, `run_assertions` returns timeout failures for all remaining predicates.
+
+**TypeScript:** `mcp-server/src/tools/gameplay.ts` defines all commands using the schema
+table above, following the same pattern as `blueprints.ts`.
 
 **Success criteria:**
-- `gameplay_pie_start` launches PIE and returns `{success: true}` once the PIE world is ready
-- `gameplay_run_acceptance_tests` returns a list of `{predicate, passed, observed}` objects
-- A PromptBrush run generating a horror game can assert `log_contains:TriggerFired` and receive a real pass/fail
+- `gameplay_pie_start` launches PIE and returns `{success: true}` once the log marker is found
+- `gameplay_run_acceptance_tests` returns `[{predicate, passed, observed}]` per predicate
+- `widget_visible:WBP_HUD` passes via runtime widget query, not just log marker
+- A PromptBrush run can assert `log_contains:TriggerFired` and receive a real pass/fail
 
 **Prerequisites:** None.
 
@@ -183,68 +216,75 @@ handler -- it is not a caller-supplied parameter.
 with a structured interpreter that reads the prompt and produces a unique `BuildSpec`
 reflecting what was actually asked.
 
-**Why second:** The generation plane is only as good as the spec it receives. "Make a
-horror game" currently always produces the same Blueprint list regardless of what the
-prompt actually describes.
+**Why:** "Make a horror game" currently always produces the same Blueprint list.
+Full autonomous generation requires the spec to vary with the prompt -- including
+the relationships between actors and mechanics, not just their presence.
 
 **Approach:** Two-pass strategy:
 
-1. **Intent extraction** -- parse the prompt for: genre, named actors (e.g. "a ghost",
-   "a coin", "a door"), named mechanics (e.g. "collects", "opens when", "must hide from"),
-   win/lose conditions, named maps, named UI screens, named audio cues, named sequences.
-   Produces an `IntentMap`.
+1. **Intent extraction** -- parse the prompt for: genre, named actors, named mechanics,
+   win/lose conditions, named maps, named UI screens, named audio cues, and crucially,
+   **relationships** between actors and mechanics (e.g. "door opens when all coins are
+   collected" is a relationship, not just two actors).
 
 2. **Spec assembly** -- build `BuildSpec` from `IntentMap` using a mechanics registry.
-   Each mechanic in the registry is a small Python file that exports a `fragment(intent: IntentMap) -> BuildSpecFragment`.
-   `BuildSpecFragment` is a partial `BuildSpec` (same dataclass, all fields optional).
-   Fragments are merged into the final `BuildSpec` by concatenating lists and merging dicts.
+   Each mechanic exports `fragment(intent: IntentMap) -> BuildSpecFragment`. Fragments
+   are merged by concatenating lists and merging dicts.
 
 `IntentMap` fields:
 ```python
 @dataclass
+class IntentRelation:
+    source: str              # e.g. "door"
+    verb: str                # e.g. "opens_when"
+    target: str              # e.g. "all_coins_collected"
+    condition: Optional[str] # e.g. "coin_counter >= total_coins"
+    timing: Optional[str]    # e.g. "on_overlap", "on_timer", "on_trigger"
+    scope: Optional[str]     # e.g. "level", "actor", "global"
+
+
+@dataclass
 class IntentMap:
-    genre: str                        # detected or "generic"
-    actors: List[str]                 # named entities from prompt ("coin", "door", "ghost")
-    mechanics: List[str]              # detected verb phrases ("collect", "hide", "open_when")
-    win_condition: Optional[str]      # "all_coins_collected", "reach_exit", etc.
-    lose_condition: Optional[str]     # "caught_by_enemy", "timer_expired", etc.
-    map_names: List[str]              # named levels ("dungeon", "lobby")
-    ui_screens: List[str]             # named UI ("hud", "game_over", "main_menu")
-    audio_cues: List[str]             # named sounds ("footstep", "coin_collect")
-    raw_prompt: str                   # original prompt text
+    genre: str                           # detected or "generic"
+    actors: List[str]                    # named entities ("coin", "door", "ghost")
+    mechanics: List[str]                 # detected verb phrases ("collect", "hide", "open_when")
+    relationships: List[IntentRelation]  # causal/temporal links between actors and mechanics
+    win_condition: Optional[str]         # "all_coins_collected", "reach_exit", etc.
+    lose_condition: Optional[str]        # "caught_by_enemy", "timer_expired", etc.
+    map_names: List[str]                 # named levels ("dungeon", "lobby")
+    ui_screens: List[str]                # named UI ("hud", "game_over", "main_menu")
+    audio_cues: List[str]                # named sounds ("footstep", "coin_collect")
+    raw_prompt: str                      # original prompt text
 ```
 
-This is deterministic and runs inside UE4 with no external API calls. The intelligence
-is in the mechanics registry: the richer the registry, the more diverse the output.
+`BuildSpecFragment` is a partial `BuildSpec` (all list fields default to empty, no required
+fields). The assembler merges fragments by appending all lists and taking the first non-None
+value for scalar fields.
 
 Starter mechanics registry (minimum viable):
 - `mechanics/player_movement.py` -- Character, PlayerController, input mappings
-- `mechanics/collect_item.py` -- pickup actor, counter variable, win trigger
-- `mechanics/door_trigger.py` -- door Blueprint with Timeline lerp open
-- `mechanics/enemy_patrol.py` -- AI enemy with BT Sequence/MoveTo/Wait
-- `mechanics/hide_from_enemy.py` -- AI perception, stealth variable, lose trigger
+- `mechanics/collect_item.py` -- pickup actor, counter variable, win trigger Blueprint graph
+- `mechanics/door_trigger.py` -- door Blueprint with TimelineSpec lerp-open
+- `mechanics/enemy_patrol.py` -- AI enemy with BehaviorTreeSpec Sequence/MoveTo/Wait
+- `mechanics/hide_from_enemy.py` -- AI perception, stealth variable on PlayerCharacter, lose trigger
 - `mechanics/main_menu.py` -- WBP_MainMenu with Play/Quit buttons
 - `mechanics/game_over.py` -- WBP_GameOver with score display and retry
 
 **New files:**
 - `generation/intent_extractor.py` -- `extract_intent(prompt: str) -> IntentMap`
 - `generation/spec_assembler.py` -- `assemble(intent: IntentMap) -> BuildSpec`
-- `generation/mechanics/__init__.py`
-- `generation/mechanics/player_movement.py`
-- `generation/mechanics/collect_item.py`
-- `generation/mechanics/door_trigger.py`
-- `generation/mechanics/enemy_patrol.py`
-- `generation/mechanics/hide_from_enemy.py`
-- `generation/mechanics/main_menu.py`
-- `generation/mechanics/game_over.py`
-- `generation/spec_schema.py` -- add `IntentMap`, `BuildSpecFragment` dataclasses
+- `generation/mechanics/__init__.py` + 7 mechanic files listed above
 
 **Modified files:**
 - `generation/prompt_to_spec.py` -- delegates to `extract_intent` + `assemble`
+- `generation/spec_schema.py` -- add `IntentMap`, `IntentRelation`, `BuildSpecFragment`
 
 **Success criteria:**
-- Prompt "player collects coins and a door opens when all coins are collected" produces a `BuildSpec` containing `BP_Coin`, `BP_Door`, and `BP_GameMode` with a coin counter -- but not `BP_Enemy`
-- Prompt "player must hide from a monster" produces `BP_Enemy` with a BT, `BP_AIController`, and `BP_PlayerCharacter` with a stealth variable -- but not `BP_Coin` or `BP_Door`
+- Prompt "player collects coins and a door opens when all coins are collected" produces
+  `BP_Coin`, `BP_Door`, `BP_GameMode` with a coin counter -- but not `BP_Enemy`. The
+  `IntentMap.relationships` contains `IntentRelation(source="door", verb="opens_when", target="all_coins_collected")`.
+- Prompt "player must hide from a monster" produces `BP_Enemy`, `BP_AIController`,
+  stealth variable on `BP_PlayerCharacter` -- but not `BP_Coin` or `BP_Door`
 - Neither output contains hardcoded genre template names from the old `prompt_to_spec.py`
 
 **Prerequisites:** None (parallel to Phase 1).
@@ -254,21 +294,21 @@ Starter mechanics registry (minimum viable):
 ### Phase 3a -- Timelines
 
 **What:** Add `TimelineSpec` to `spec_schema.py` and `timeline_generator.py` that creates
-`UCurveFloat` / `UCurveVector` assets and attaches them to Blueprint event graphs as
-`CallFunction:AddTimeline` nodes via the existing `BlueprintGraphBuilderLibrary` C++ plugin.
+`UCurveFloat` / `UCurveVector` assets and inserts `UK2Node_Timeline` graph nodes via
+a new C++ plugin pass (Pass 12).
 
-**Why timelines:** Timelines are the most common way to drive smooth movement, fade
-effects, and timed door-open sequences. Generated Blueprints that need time-based behavior
-currently have no mechanism.
+**Why:** Timelines are the most common way to drive smooth movement, fade effects, and
+timed door-open sequences in UE4 gameplay Blueprints. Without them, generated content
+can only express instant state changes.
 
-**Approach:** Timelines in UE4.27 cannot be added to a Blueprint's SimpleConstructionScript
-from Python -- the SCS node API for TimelineComponent is not exposed. Instead, the
-approach is:
-1. Create a `UCurveFloat` asset for each track via `AssetToolsHelpers`
-2. Emit a `TimelineNode` entry in the Blueprint's `graph_json` that the
-   `BlueprintGraphBuilderLibrary` (existing C++ plugin, pass 12) processes into a
-   `UK2Node_Timeline` graph node wired to the curve asset
-3. Pass 12 of the C++ plugin must be added to implement `UK2Node_Timeline` insertion
+**Approach:**
+1. Create `UCurveFloat` / `UCurveVector` assets via `AssetToolsHelpers`
+2. Emit a `TimelineNode` entry in the Blueprint's `graph_json`
+3. Pass 12 of `BlueprintGraphBuilderLibrary` processes it into a `UK2Node_Timeline`
+   wired to the curve asset
+
+Note: Timelines cannot be added to a Blueprint's SCS from Python -- the SCS node API
+for `TimelineComponent` is not exposed in UE4.27.
 
 `TimelineSpec` fields:
 ```python
@@ -283,37 +323,34 @@ class TimelineSpec:
 ```
 
 **New files:**
-- `generation/timeline_generator.py` -- `generate_timeline(spec: TimelineSpec)` creates CurveFloat assets and returns graph_json fragment for use by BlueprintGraphBuilderLibrary
-- `ue4-plugin/BlueprintGraphBuilder/Private/Pass12_Timeline.cpp` -- C++ pass 12 implementing `UK2Node_Timeline` insertion
+- `generation/timeline_generator.py` -- creates CurveFloat assets and returns `graph_json` fragment
+- `ue4-plugin/BlueprintGraphBuilder/Private/Pass12_Timeline.cpp` -- C++ pass 12: `UK2Node_Timeline` insertion
 
 **Modified files:**
 - `generation/spec_schema.py` -- add `TimelineSpec`, add `timelines: List[TimelineSpec]` to `BuildSpec`
 - `generation/blueprint_generator.py` -- call `timeline_generator` before graph build
 
 **Success criteria:**
-- `UK2Node_Timeline` node is present in the door Blueprint's event graph (verifiable in the Blueprint editor without running PIE)
+- `UK2Node_Timeline` node is present in the door Blueprint's event graph (verifiable in the Blueprint editor, no PIE required)
 - `CurveFloat` asset exists at the specified `content_path`
 - Bonus (requires Phase 1): door rotates over 1 second in PIE when trigger fires
 
-**Prerequisites:** None. Phase 1 is recommended for full runtime validation of the success criteria but not required to implement or merge this phase.
+**Prerequisites:** None. Phase 1 is recommended for full runtime validation but not required to merge.
 
 ---
 
 ### Phase 3b -- Behavior Tree Node Graphs
 
-**What:** Add node graph content to generated Behavior Trees. Currently `generate_behavior_tree()`
-creates a BT asset shell with a Blackboard assigned but no composite/task nodes.
+**What:** Add actual node graph content to generated Behavior Trees. Currently
+`generate_behavior_tree()` creates a BT asset shell with a Blackboard assigned but no
+composite or task nodes -- enemies stand still.
 
-**Why:** A BT with no tree is a non-functional asset. Generated enemies have AI controllers
-that reference BTs with empty graphs, so enemies stand still.
+**API constraint:** `UBehaviorTreeGraphNode` is in the `BehaviorTreeEditor` module and
+is not exposed to UE4.27 Python. Requires a C++ plugin extension.
 
-**API constraint:** `UBehaviorTreeGraphNode` (the graph editor node type) is in the
-`BehaviorTreeEditor` module and is not exposed to UE4.27 Python. The same constraint that
-required a C++ plugin for Blueprint graph authoring applies here.
+**Approach:** Add `BehaviorTreeBuilderLibrary` to the existing `BlueprintGraphBuilder`
+plugin (`Private/BehaviorTreeBuilder/`):
 
-**Approach:** Add a `BehaviorTreeBuilderLibrary` C++ class to the existing
-`BlueprintGraphBuilder` plugin (new subdirectory `Private/BehaviorTreeBuilder/`).
-Exposes one function to Python:
 ```cpp
 static bool BuildBehaviorTreeFromJSON(
     UBehaviorTree* BehaviorTree,
@@ -322,7 +359,7 @@ static bool BuildBehaviorTreeFromJSON(
 );
 ```
 
-The JSON schema mirrors the existing `BehaviorTreeSpec.root` dict:
+JSON schema (mirrors `BehaviorTreeSpec.root`):
 ```json
 {
   "type": "Sequence",
@@ -338,12 +375,11 @@ The JSON schema mirrors the existing `BehaviorTreeSpec.root` dict:
 - `ue4-plugin/BlueprintGraphBuilder/Private/BehaviorTreeBuilder/BehaviorTreeBuilderLibrary.cpp`
 
 **Modified files:**
-- `generation/ai_generator.py` -- after creating BT asset shell, call `BehaviorTreeBuilderLibrary.BuildBehaviorTreeFromJSON`
-- `ue4-plugin/BlueprintGraphBuilder/BlueprintGraphBuilder.Build.cs` -- add `AIModule`, `BehaviorTreeEditor` dependencies
+- `generation/ai_generator.py` -- call `BehaviorTreeBuilderLibrary.BuildBehaviorTreeFromJSON` after shell creation
+- `ue4-plugin/BlueprintGraphBuilder/BlueprintGraphBuilder.Build.cs` -- add `AIModule`, `BehaviorTreeEditor`
 
-**Success criteria:** A generated enemy Blueprint's BT asset contains a Selector with a
-Sequence -> BTTask_MoveTo -> BTTask_Wait subgraph visible in the BT editor. The enemy
-moves to a patrol point and waits in PIE.
+**Success criteria:** Generated enemy BT contains Selector -> Sequence -> BTTask_MoveTo ->
+BTTask_Wait visible in the BT editor. Enemy moves and waits in PIE.
 
 **Prerequisites:** None.
 
@@ -351,17 +387,14 @@ moves to a patrol point and waits in PIE.
 
 ### Phase 3c -- Anim Blueprint State Machines
 
-**What:** `AnimBlueprintSpec` exists in `spec_schema.py` but no generator creates ABP
-assets or wires state machine transitions.
-
-**Why:** Characters with no AnimBlueprint use a default T-pose in PIE. Generated games
-with a character need at least Idle/Walk/Run to feel playable.
+**What:** Add an Anim Blueprint generator. `AnimBlueprintSpec` exists in the schema
+but no generator creates ABP assets or wires state machine transitions.
 
 **API constraint:** `UAnimationStateMachineGraph` is in the `AnimGraph` module and is
-not exposed to UE4.27 Python. Same constraint as BT graphs -- requires C++ plugin.
+not exposed to UE4.27 Python. Requires a C++ plugin extension.
 
-**Approach:** Add an `AnimBlueprintBuilderLibrary` C++ class to the existing plugin
-(new subdirectory `Private/AnimBuilder/`). Exposes:
+**Approach:** Add `AnimBlueprintBuilderLibrary` to the existing plugin (`Private/AnimBuilder/`):
+
 ```cpp
 static bool BuildAnimBlueprintFromJSON(
     UAnimBlueprint* AnimBlueprint,
@@ -370,7 +403,7 @@ static bool BuildAnimBlueprintFromJSON(
 );
 ```
 
-JSON schema mirrors `AnimBlueprintSpec.state_machines`:
+JSON schema (mirrors `AnimBlueprintSpec.state_machines`):
 ```json
 {
   "state_machines": [{
@@ -392,13 +425,11 @@ JSON schema mirrors `AnimBlueprintSpec.state_machines`:
 - `ue4-plugin/BlueprintGraphBuilder/Private/AnimBuilder/AnimBlueprintBuilderLibrary.cpp`
 
 **Modified files:**
-- `generation/spec_schema.py` -- `AnimBlueprintSpec` already exists, no schema changes needed
-- `handlers/promptbrush.py` -- add `generate_all_anim_blueprints` call in pipeline
-- `ue4-plugin/BlueprintGraphBuilder/BlueprintGraphBuilder.Build.cs` -- add `AnimGraph`, `AnimGraphRuntime` dependencies
+- `handlers/promptbrush.py` -- add `generate_all_anim_blueprints` call
+- `ue4-plugin/BlueprintGraphBuilder/BlueprintGraphBuilder.Build.cs` -- add `AnimGraph`, `AnimGraphRuntime`
 
-**Success criteria:** A generated character has an ABP with an Idle/Walk state machine
-visible in the Anim Blueprint editor. The character plays the Idle animation in PIE and
-transitions to Walk when `Speed > 10`.
+**Success criteria:** Generated character has an ABP with Idle/Walk state machine visible
+in the editor. Character plays Idle and transitions to Walk at `Speed > 10` in PIE.
 
 **Prerequisites:** None.
 
@@ -406,69 +437,124 @@ transitions to Walk when `Speed > 10`.
 
 ### Phase 4 -- Incremental Repair Engine
 
-**What:** When Blueprint compilation fails, parse the error, identify which node or
-variable is broken, patch the spec fragment that produced it, and recompile -- without
-regenerating the whole BuildSpec.
+**What:** When Blueprint compilation fails, parse the error, patch the spec or graph
+fragment that caused it, and recompile -- without regenerating the full BuildSpec.
 
 **Why:** The current compile loop retries the same `save_asset()` call up to 3 times.
-If the graph has a broken node reference, all three attempts fail identically.
-Real repair requires reading the error, understanding which graph fragment caused it,
-and issuing a targeted fix.
+Retrying a broken graph produces the same failure every time.
 
-**Error source:** The existing `compile_loop.py` catches exceptions from `save_asset()`.
-Blueprint compile errors also appear in the editor output log as `LogKismet: Error:` lines.
-`repair_engine.py` reads compile errors from two sources:
-1. The exception string from `save_asset()` (immediate, may be partial)
-2. New `LogKismet: Error:` lines from the log file (via the same log-file cursor mechanism
-   as Phase 1 telemetry capture) scraped after the failed save
+**Error source:** Two sources, read in sequence:
+1. Exception string from `save_asset()` (immediate, may be partial)
+2. New `LogKismet: Error:` lines from the log file, scraped via the log-cursor utility
+   (shared with `telemetry_capture.py`)
+
+**Two repair target classes:**
+
+`SpecRepairAction` -- changes `BlueprintSpec` fields without touching generated graph JSON.
+Use when the intent itself is wrong (e.g. wrong parent class, missing variable declaration).
+
+`GraphRepairAction` -- patches the generated `graph_json` without changing the `BlueprintSpec`.
+Use when the intent is correct but the builder produced bad output (e.g. bad function
+reference, pin type mismatch in emitted JSON).
+
+**The repair engine prefers `GraphRepairAction` first.** Spec-level repair is used only
+when graph repair cannot satisfy the spec (e.g. the requested function does not exist
+on any accessible class).
 
 **Repair strategies by error class:**
 
-| Error pattern | Repair action |
-|---|---|
-| `Cannot find function 'X'` | Remove the node calling X from `graph_json` |
-| `Variable 'X' not found` | Add variable X with inferred type to `BlueprintSpec.variables` |
-| `Pin type mismatch: A to B` | Insert a type-conversion node between the mismatched pins |
-| `Circular dependency` | Remove the cross-reference node from the dependent Blueprint |
-| `Missing parent class` | Set `parent_class` to `Actor` in `BlueprintSpec` |
+| Error pattern | Repair type | Action |
+|---|---|---|
+| `Cannot find function 'X'` | GraphRepair | Remove the node calling X from `graph_json` |
+| `Variable 'X' not found` | SpecRepair | Add variable X with inferred type to `BlueprintSpec.variables` |
+| `Pin type mismatch: A to B` | GraphRepair | Insert conversion node between mismatched pins |
+| `Circular dependency` | GraphRepair | Remove cross-reference node from dependent Blueprint |
+| `Missing parent class` | SpecRepair | Set `parent_class` to `Actor` |
 
 **New files:**
-- `generation/repair_engine.py` -- `parse_compile_errors(log_lines: List[str], exception: str) -> List[RepairAction]`, `apply_repair(spec: BuildSpec, bp_name: str, action: RepairAction) -> BuildSpec`
+- `generation/repair_engine.py`:
+  - `parse_compile_errors(log_lines: List[str], exception: str) -> List[Union[SpecRepairAction, GraphRepairAction]]`
+  - `apply_repair(spec: BuildSpec, bp_name: str, action: RepairAction) -> BuildSpec`
 
 **Modified files:**
-- `generation/compile_loop.py` -- on failure, scrape log for `LogKismet: Error:` lines, call `repair_engine`, then retry
+- `generation/compile_loop.py` -- on failure, scrape log, call repair engine, retry
 
 **Success criteria:**
-- A Blueprint with a broken function call reference (`Cannot find function`) compiles after one repair pass
-- A Blueprint with a missing variable compiles after the variable is added
-- A Blueprint with a pin type mismatch compiles after a conversion node is inserted
-- All three cases verified without human input
+- Blueprint with broken function reference compiles after one graph repair pass
+- Blueprint with missing variable compiles after one spec repair pass (variable added)
+- Blueprint with pin type mismatch compiles after one graph repair pass (conversion node inserted)
+- All three verified without human input
 
-**Prerequisites:** Phase 1's `telemetry_capture.py` log-file cursor utility is reused here
-to read `LogKismet: Error:` lines. Only that file-reading utility is needed, not the full
-PIE harness. If implementing Phase 4 before Phase 1, the log-cursor code can be written
-directly in `repair_engine.py` and later extracted into `telemetry_capture.py` when
-Phase 1 is built.
+**Prerequisites:** The log-cursor file-reading utility from `telemetry_capture.py` is
+reused here. If implementing Phase 4 before Phase 1, write the cursor logic inline in
+`repair_engine.py` and extract it to `telemetry_capture.py` when Phase 1 is built.
+
+---
+
+### Phase 4.5 -- Reference and Redirector Integrity
+
+**What:** Validate all generated asset paths in the manifest, resolve redirectors, verify
+soft references still point to live assets, and rewrite dangling soft object paths after
+renames or moves. Fail the run if unresolved dangling references remain.
+
+**Why:** UE4.27 asset automation breaks silently when assets are renamed, moved, or
+regenerated across PromptBrush runs. `save_asset()` succeeds even when a Blueprint holds
+a stale soft reference to an asset that was deleted or moved in a previous run. This goes
+undetected until PIE or cook.
+
+**UE4.27 Python API surface:**
+- `unreal.AssetTools.find_soft_references_to_object(asset)` -- find all referencing assets
+- `unreal.AssetTools.rename_assets([move_data])` -- atomic rename + redirector creation
+- `unreal.EditorAssetLibrary.does_asset_exist(path)` -- quick live-asset check
+- `unreal.AssetRegistryHelpers.get_asset_registry()` -- query all known assets
+
+**Validation steps:**
+1. For each asset path in manifest, call `does_asset_exist()` -- fail if missing
+2. For each asset, get its soft references and verify each target exists
+3. For assets that have moved (old path in manifest vs. new path in registry), call
+   `rename_assets` to create a redirector from old to new
+4. Report all dangling references that could not be auto-resolved
+
+**New files:**
+- `generation/reference_validator.py`:
+  - `validate_manifest(manifest_path: str) -> ReferenceReport`
+  - `resolve_redirectors(asset_paths: List[str]) -> List[str]`
+  - `find_dangling_refs(asset_paths: List[str]) -> List[DanglingRef]`
+
+**Modified files:**
+- `handlers/promptbrush.py` -- run reference validation before writing the final manifest
+- `router.py` -- register `gameplay_validate_references`
+- `handlers/gameplay.py` -- `handle_validate_references` wraps `reference_validator`
+
+**Success criteria:**
+- A PromptBrush run where a Blueprint was regenerated with a new content path reports
+  the old path as a redirector, not a missing asset
+- A run where a soft reference was broken (target asset deleted) fails with a
+  `DanglingRef` report naming the source and target assets
+- A clean run with all assets intact returns `{dangling: [], redirectors_created: N}`
+
+**Prerequisites:** Phase 1 (PIE failures due to dangling refs are easier to diagnose
+with telemetry; Phase 4.5 prevents them from reaching PIE in the first place).
 
 ---
 
 ### Phase 5 -- Import Pipeline
 
-**What:** Add the ability to import external files (FBX meshes, PNG textures,
-WAV audio, skeletal meshes with skeleton assignment) into the content browser,
-handle reimport when the source file changes, and normalize imported assets
-(auto-assign materials, fix skeleton references, generate LODs).
+**What:** Import external files (FBX meshes, PNG textures, WAV audio, skeletal meshes)
+into the content browser, handle reimport when the source file changes, and normalize
+imported assets (auto-assign materials, fix skeleton references, generate LODs).
 
-**Why:** Generated gameplay that uses only primitive meshes and placeholder materials
-will never feel like a real game. The import pipeline is how placeholder content gets
-replaced with real assets without breaking Blueprint references.
+**Import policy decision:** PromptBrush treats imported assets as **external sources**.
+They are reimported from their source file path; in-editor edits are not protected.
+`reimport_asset()` always overwrites the content-browser asset from the source file.
+This is correct for automated pipelines where the source file is authoritative.
 
 **UE4.27 Python API surface:**
-- `unreal.AssetImportTask` -- configure one import task (source path, destination, options)
-- `unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])` -- execute batch
-- `unreal.FbxImportUI` -- FBX import options: `import_mesh`, `import_as_skeletal`, `skeleton`, `generate_lod_group`
+- `unreal.AssetImportTask` -- configure one import (source, destination, options)
+- `unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])` -- batch import
+- `unreal.FbxImportUI` -- FBX options: `import_mesh`, `import_as_skeletal`, `skeleton`, `generate_lod_group`
 - `unreal.EditorAssetLibrary.reimport_async(path)` -- reimport from original source
-- `unreal.ImportSubsystem` -- register post-import delegate for normalization (assign default material, etc.)
+- `unreal.ImportSubsystem` -- post-import delegate for normalization
 
 **New files:**
 - `generation/import_pipeline.py`:
@@ -477,13 +563,11 @@ replaced with real assets without breaking Blueprint references.
   - `normalize_skeletal_mesh(content_path: str, skeleton_path: str) -> bool`
 
 **Modified files:**
-- `router.py` -- register `gameplay_import_asset` -> `gameplay.handle_import_asset`
+- `router.py` -- register `gameplay_import_asset`
 - `handlers/gameplay.py` -- `handle_import_asset` calls `import_pipeline.import_file`
 
-**Success criteria:** An FBX character mesh imports to a specified content path, receives
-auto-assigned materials via post-import hook, and gets its skeleton assigned to an existing
-`USkeleton` asset -- all from one `gameplay_import_asset` call, no dialog boxes, no
-human clicks.
+**Success criteria:** FBX character mesh imports, receives auto-assigned materials via
+post-import hook, gets skeleton assigned to an existing `USkeleton` -- one command, no dialogs.
 
 **Prerequisites:** None (parallel to all other phases).
 
@@ -491,128 +575,132 @@ human clicks.
 
 ### Phase 6 -- Packaging Validation
 
-**What:** Trigger a cook for generated content and parse the cook log to verify all
-generated assets cooked cleanly, no missing references, no stripped content.
+**What:** Trigger a cook and parse the cook log to verify generated assets cooked
+cleanly -- no missing references, no stripped content.
 
 **Why:** Assets that compile in-editor can fail to cook: unresolved soft references,
-editor-only code in runtime Blueprints, missing redirectors, or AssetManager rules that
-exclude generated content from the cook.
+editor-only code in runtime Blueprints, or AssetManager rules that exclude generated content.
 
-**UE4.27 approach -- editor commandlet, not RunUAT from inside the editor:**
-Running `RunUAT.bat BuildCookRun` from inside the editor process is blocked by file locks
-(the editor holds exclusive locks on .uasset files). Instead, the cook is triggered via
-the editor's `DerivedDataCache` commandlet in a separate process that the editor spawns
-and waits on:
+**Two cook modes:**
+
+1. **Package-scoped** (fast, default): cook only the packages listed in the latest
+   manifest's `primary_asset_labels`. Uses `PrimaryAssetLabel` assets already generated
+   by the pipeline. Suitable for CI-style iteration checks.
+
+2. **Map-scoped** (thorough, opt-in via `map_path` param): full map cook.
+   Required before shipping.
+
+Both modes use the editor commandlet subprocess approach -- NOT `RunUAT.bat` from inside
+the editor (file lock conflict). The subprocess is:
 
 ```
-UE4Editor-cmd.exe <ProjectFile> -run=Cook -TargetPlatform=WindowsNoEditor
-  -fileopenlog -stdout -unattended -NoLogTimes -map=<MapPath>
+UE4Editor-Cmd.exe <ProjectFile> -run=Cook -TargetPlatform=WindowsNoEditor
+  -fileopenlog -stdout -unattended -NoLogTimes [-map=<MapPath>]
 ```
 
-This is a subprocess spawned by `cook_validator.py` using `subprocess.Popen`. The editor
-process that spawns it must release its lock by having already saved all assets before
-the cook subprocess starts. The cook subprocess reads cooked assets from the saved
-versions, not from the live editor memory.
-
-The `UE4Editor-Cmd.exe` path is resolved at runtime inside `cook_validator.py` via:
+`UE4Editor-Cmd.exe` path is resolved at runtime:
 ```python
 unreal.Paths.engine_dir() + "Binaries/Win64/UE4Editor-Cmd.exe"
 ```
-It is not a caller-supplied parameter. The project file path is resolved via
-`unreal.Paths.get_project_file_path()`.
+Project file path: `unreal.Paths.get_project_file_path()`.
+
+All assets must be saved before the subprocess starts (the subprocess reads from disk,
+not from editor memory).
 
 **New files:**
 - `generation/cook_validator.py`:
-  - `run_cook(map_path: str) -> CookResult`
+  - `run_cook(map_path: Optional[str] = None) -> CookResult`
   - `parse_cook_log(log: str) -> List[CookError]`
 
 `CookError` fields: `asset_path`, `error_type` (`missing_ref`, `editor_only`, `stripped`), `message`
 
 **Modified files:**
 - `router.py` -- register `gameplay_cook_validate`
-- `handlers/gameplay.py` -- `handle_cook_validate` calls `cook_validator.run_cook`
-- `handlers/promptbrush.py` -- add optional cook validation phase after manifest write
+- `handlers/gameplay.py` -- `handle_cook_validate`, passes `map_path=None` for package-scoped mode
+- `handlers/promptbrush.py` -- optional cook validation phase after manifest write
 
-**Success criteria:** `gameplay_cook_validate` returns either a list of `CookError`
-objects identifying missing references, or `{success: true, errors: []}` confirming a
-clean cook. The cook subprocess exits and returns results within 5 minutes for a
-standard generated level.
+**Success criteria:**
+- Package-scoped cook (`packages_only: true`) returns results for just the latest manifest's assets
+- Map-scoped cook returns full `CookError` list or `{success: true, errors: []}`
+- Cook subprocess exits within 5 minutes for a standard generated level
 
-**Prerequisites:** Phase 1 (proves game works in PIE before investing cook time),
-Phase 5 (real assets are in place before cook).
+**Prerequisites:** Phase 1 (verify PIE works before paying cook cost), Phase 5 (real assets before cook).
 
 ---
 
 ### Phase 7 -- Source-Control Aware Writes
 
-**What:** Before saving or overwriting any `.uasset` file, check it out from source
-control, and after generation mark new files for add. If checkout fails because the
-file is locked by another user, report the lock owner instead of silently overwriting.
+**What:** Before saving any `.uasset` file, check it out from source control and mark
+new files for add. If a file is locked, report the lock owner instead of overwriting.
 
 **Why:** Silent overwrite of a checked-out `.uasset` causes binary merge conflicts in
 Perforce. Git LFS requires explicit `git add` for new binary assets.
 
 **UE4.27 Python API surface:**
-- `unreal.SourceControl.get_provider()` -- returns the active provider (Perforce, Git, None)
-- `unreal.SourceControl.get_file_states([paths])` -- returns `SourceControlState` per path
-- `unreal.SourceControl.check_out_files([paths])` -- checkout before write
-- `unreal.SourceControl.mark_files_for_add([paths])` -- add new files
+- `unreal.SourceControl.check_out_or_add_file(path)` -- preferred single call for the
+  common case: checks out if existing, marks for add if new
+- `unreal.SourceControl.get_file_states([paths])` -- inspect `SourceControlState` for
+  lock owner, read-only status, check-out status
+- `unreal.SourceControl.get_provider()` -- returns active provider or None
 
-**Behavior when no source control is configured:** `get_provider()` returns `None` or an
-inactive provider. In this case `checkout_before_write` returns `True` immediately and
-proceeds without error. This is the expected behavior for solo development.
+**Write flow for every generator:**
+1. Resolve asset file path
+2. Call `SourceControl.check_out_or_add_file(path)`
+3. If False, inspect `SourceControlState` for lock owner and return `{success: false, error: "Locked by: <owner>"}`
+4. Only then call `save_asset()`
+
+**Behavior when no source control is configured:** `get_provider()` returns None.
+`checkout_before_write` returns True immediately, all writes proceed.
 
 **New files:**
 - `utils/source_control.py`:
-  - `checkout_before_write(path: str) -> bool` -- returns True if safe to write (checked out or no SC)
-  - `mark_new_for_add(path: str) -> bool`
-  - `get_lock_owner(path: str) -> Optional[str]` -- returns username if locked by another user
+  - `checkout_before_write(path: str) -> bool`
+  - `get_lock_owner(path: str) -> Optional[str]`
 
-**Modified files:** Nine generator files that call `unreal.EditorAssetLibrary.save_asset()`:
-`blueprint_generator.py`, `widget_generator.py`, `asset_generator.py`, `level_generator.py`,
-`audio_generator.py`, `sequence_generator.py`, `localization_generator.py`,
-`cook_generator.py`, `ai_generator.py`.
-
-Each `save_asset(path)` call is preceded by `source_control.checkout_before_write(path)`.
-If `checkout_before_write` returns `False` (locked by another user), the generator
-skips the asset and records it as a skipped result with `lock_owner` in the error field.
+**Modified files:** Nine generator files (`blueprint_generator.py`, `widget_generator.py`,
+`asset_generator.py`, `level_generator.py`, `audio_generator.py`, `sequence_generator.py`,
+`localization_generator.py`, `cook_generator.py`, `ai_generator.py`) -- each `save_asset()`
+call preceded by `source_control.checkout_before_write()`.
 
 **Success criteria:**
-- Generating a Blueprint that exists in a Perforce workspace checks it out before saving
-- A new Blueprint is marked for add after creation
-- A file locked by another user returns `{success: false, error: "Locked by: username"}` instead of failing silently or overwriting
-- When no source control provider is configured, all writes proceed without error
+- Existing Blueprint in Perforce workspace is checked out before overwriting
+- New Blueprint is marked for add
+- Locked file returns error with lock owner, skips asset without crash
+- No SC provider configured: all writes proceed without error
 
-**Prerequisites:** None. Lowest urgency -- only relevant in team environments.
+**Prerequisites:** None. Lowest urgency -- relevant only in team environments.
 
 ---
 
 ## Dependency Graph
 
 ```
-Phase 1 (PIE harness)     -----> Phase 4 (log-scrape mechanism reused for compile errors)
-Phase 1 (PIE harness)     -----> Phase 6 (proves PIE works before cook investment)
-Phase 5 (import pipeline) -----> Phase 6 (real assets in place before cook)
-Phase 2 (prompt interp)   independent
-Phase 3a (timelines)      independent
-Phase 3b (BT graphs)      independent (C++ plugin work)
-Phase 3c (anim BP)        independent (C++ plugin work)
-Phase 7 (source control)  independent
+Phase 1 (PIE harness)       -----> Phase 4 (log-cursor utility reused)
+Phase 1 (PIE harness)       -----> Phase 4.5 (telemetry confirms refs before PIE)
+Phase 1 (PIE harness)       -----> Phase 6 (verify PIE before cook investment)
+Phase 4.5 (ref integrity)   -----> Phase 6 (clean refs before cook)
+Phase 5 (import pipeline)   -----> Phase 6 (real assets before cook)
+Phase 2 (prompt interp)     independent
+Phase 3a (timelines)        independent
+Phase 3b (BT graphs)        independent (C++ plugin work)
+Phase 3c (anim BP)          independent (C++ plugin work)
+Phase 7 (source control)    independent
 ```
 
 Recommended build order:
 1. Phase 1 (PIE harness)
-2. Phase 2 + Phase 3a/3b/3c in parallel (no dependencies between them)
-3. Phase 4 (after Phase 1)
-4. Phase 5 (any time)
-5. Phase 6 (after Phase 1 and Phase 5)
-6. Phase 7 (any time)
+2. Phase 2 + Phase 3a + 3b + 3c in parallel
+3. Phase 4 (after Phase 1, log cursor)
+4. Phase 4.5 (after Phase 1)
+5. Phase 5 (any time)
+6. Phase 6 (after Phase 1 + Phase 4.5 + Phase 5)
+7. Phase 7 (any time)
 
 ## What This Does Not Cover
 
-- **Multiplayer / replication** -- UE4.27 Python does not expose replication graph authoring. Replicated variables and RPCs require C++ or manual Blueprint editing.
-- **Animation retargeting** -- Skeleton retargeting is editor UI only, no Python API.
-- **Packaging to platforms other than Windows** -- Cross-compilation toolchains are outside the bridge's scope.
-- **Runtime crashes inside PIE that kill the editor process** -- The PIE harness returns a timeout failure for all remaining predicates. A crash watchdog (external process monitor) is out of scope.
-- **Input simulation during PIE** -- No Python API exists for injecting input actions into a running PIE PlayerController. Deferred pending a C++ input injection plugin.
-- **Content quality** -- The bridge generates structurally correct assets. Whether the game is fun, balanced, or visually polished is outside the scope of automation.
+- **Multiplayer / replication** -- UE4.27 Python does not expose replication graph authoring. RPCs require C++ or manual Blueprint editing.
+- **Animation retargeting** -- Editor UI only, no Python API.
+- **Packaging to non-Windows platforms** -- Cross-compilation toolchains are outside the bridge's scope.
+- **PIE crashes that kill the editor process** -- The harness returns timeout failures. A crash watchdog is out of scope.
+- **Input simulation during PIE** -- No Python API for injecting actions into a running PIE PlayerController. Deferred pending a C++ injection plugin.
+- **Content quality** -- The bridge generates structurally correct assets. Fun, balance, and polish are outside the scope of automation.
