@@ -127,6 +127,7 @@ Multiple agents may work on this repo concurrently. Each workstream has its own 
 | Blueprint Graph Builder | `ue4-plugin/BlueprintGraphBuilder/` | 11 passes complete | `docs/superpowers/specs/2026-03-17-blueprint-graph-builder-design.md` |
 | Widget Blueprint Builder | `ue4-plugin/BlueprintGraphBuilder/Private/WidgetBuilder/` | Design complete, Pass 1 planned | `docs/superpowers/specs/2026-03-18-widget-blueprint-builder-design.md` |
 | ShaderWeave Bridge | `unreal-plugin/Content/Python/mcp_bridge/shaderweave/` | Design complete | `docs/superpowers/specs/2026-03-18-shaderweave-bridge-mvp-design.md` |
+| Behavior Tree Builder | `ue4-plugin/BlueprintGraphBuilder/Private/BehaviorTreeBuilder/` | In progress | `docs/superpowers/specs/2026-03-19-behavior-tree-builder-design.md` |
 
 ShaderWeave is a separate product that shares the UE_Bridge listener. It uses `/shaderweave/v1/*` URL paths, not the `POST /` command router. Do not mix ShaderWeave handlers into `handlers/` or ShaderWeave routes into `router.py`. Note: `listener.py` requires minimal path-routing changes for ShaderWeave (see ShaderWeave spec for details).
 
