@@ -60,6 +60,12 @@ from mcp_bridge.handlers.promptbrush import (
     handle_prompt_status,
     handle_prompt_spec_list,
 )
+from mcp_bridge.handlers.gameplay import (
+    handle_pie_start,
+    handle_pie_stop,
+    handle_telemetry_snapshot,
+    handle_run_acceptance_tests,
+)
 
 
 # Command dispatch table
@@ -120,6 +126,12 @@ COMMAND_ROUTES: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "prompt_generate": handle_prompt_generate,
     "prompt_status": handle_prompt_status,
     "prompt_spec_list": handle_prompt_spec_list,
+
+    # Gameplay (PIE harness + telemetry)
+    "gameplay_pie_start": handle_pie_start,
+    "gameplay_pie_stop": handle_pie_stop,
+    "gameplay_telemetry_snapshot": handle_telemetry_snapshot,
+    "gameplay_run_acceptance_tests": handle_run_acceptance_tests,
 
     # Transaction support (called from MCP server for undo/redo)
     "begin_transaction": lambda params: _handle_transaction("begin", params),
