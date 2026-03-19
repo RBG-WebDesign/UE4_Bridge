@@ -117,10 +117,10 @@ class BehaviorTreeSpec:
     name: str
     content_path: str
     blackboard_path: str             # content path to associated Blackboard asset
-    # Root composite and child tasks described as nested dict tree
+    # Root node as nested dict tree matching the BehaviorTreeBuilder JSON schema.
     root: Dict[str, Any] = field(default_factory=dict)
-    # {"type": "Selector"|"Sequence", "children": [...],
-    #  "tasks": [{"type": "BTTask_MoveTo"|"BTTask_Wait"|..., "params": {...}}]}
+    # Each node: {"id": str, "type": "Selector"|"Sequence"|"MoveTo"|"Wait"|"Blackboard",
+    #  "name": str (optional), "params": {...}, "children": [...], "decorators": [...]}
 
 
 @dataclass
