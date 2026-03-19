@@ -5,6 +5,9 @@ from typing import Dict, List
 from mcp_bridge.generation.spec_schema import (
     BuildSpec, BlueprintSpec, WidgetSpec, MaterialSpec,
     DataAssetSpec, LevelSpec, InputMappingSpec,
+    BlackboardSpec, BehaviorTreeSpec, EQSQuerySpec,
+    SoundAttenuationSpec, SoundClassSpec, SoundMixSpec,
+    LevelSequenceSpec, StringTableSpec, PrimaryAssetLabelSpec,
 )
 
 
@@ -475,6 +478,94 @@ def _puzzle_fighter_spec(prompt: str) -> BuildSpec:
         ],
     )
 
+    # AI: Blackboard, Behavior Tree, EQS
+    ai = "/Game/Generated/PuzzleFighter/AI"
+    spec.blackboards = [
+        BlackboardSpec(
+            "BB_PF_AI", ai,
+            keys=[
+                {"name": "TargetLocation", "type": "Vector"},
+                {"name": "bIsAttacking", "type": "Bool"},
+                {"name": "DifficultyLevel", "type": "Float"},
+                {"name": "LastMoveColumn", "type": "Int"},
+            ],
+        ),
+    ]
+    spec.behavior_trees = [
+        BehaviorTreeSpec(
+            "BT_PF_AI", ai,
+            blackboard_path=f"{ai}/BB_PF_AI",
+            root={
+                "type": "Selector",
+                "children": [
+                    {"type": "Sequence", "tasks": [
+                        {"type": "BTTask_MoveTo", "params": {"AcceptanceRadius": 50}},
+                    ]},
+                    {"type": "Sequence", "tasks": [
+                        {"type": "BTTask_Wait", "params": {"WaitTime": 0.5}},
+                    ]},
+                ],
+            },
+        ),
+    ]
+    spec.eqs_queries = [
+        EQSQuerySpec(
+            "EQS_PF_BestColumn", ai,
+            generator_type="SimpleGrid",
+            tests=[{"type": "Distance", "scoring": "PreferLow"}],
+        ),
+    ]
+
+    # Audio
+    audio = "/Game/Generated/PuzzleFighter/Audio"
+    spec.sound_classes = [
+        SoundClassSpec("SC_PF_SFX", audio, volume=1.0),
+        SoundClassSpec("SC_PF_Music", audio, volume=0.8),
+    ]
+    spec.sound_attenuations = [
+        SoundAttenuationSpec("SA_PF_BlockDrop", audio, radius_min=50, radius_max=500,
+                             spatialization_enabled=False),
+        SoundAttenuationSpec("SA_PF_Combo", audio, radius_min=100, radius_max=1000,
+                             spatialization_enabled=False),
+    ]
+    spec.sound_mixes = [
+        SoundMixSpec("SM_PF_Gameplay", audio, fade_in_time=0.2, fade_out_time=0.5),
+    ]
+
+    # Sequencer: intro cinematic stub
+    sequences = "/Game/Generated/PuzzleFighter/Sequences"
+    spec.level_sequences = [
+        LevelSequenceSpec("LS_PF_Intro", sequences, duration_seconds=3.0,
+                          tracks=[{"type": "CameraCut"}]),
+        LevelSequenceSpec("LS_PF_Victory", sequences, duration_seconds=2.0,
+                          tracks=[{"type": "CameraCut"}]),
+    ]
+
+    # Localization
+    loc = "/Game/Generated/PuzzleFighter/Localization"
+    spec.string_tables = [
+        StringTableSpec("ST_PF_UI", loc, namespace="PuzzleFighter", entries=[
+            {"key": "MainMenu.PlayButton", "value": "Play Game"},
+            {"key": "MainMenu.SettingsButton", "value": "Settings"},
+            {"key": "MainMenu.QuitButton", "value": "Quit"},
+            {"key": "HUD.ScoreLabel", "value": "Score"},
+            {"key": "HUD.TimerLabel", "value": "Time"},
+            {"key": "Gameplay.ComboText", "value": "COMBO!"},
+            {"key": "Gameplay.PauseTitle", "value": "PAUSED"},
+            {"key": "Gameplay.GameOver", "value": "GAME OVER"},
+            {"key": "Gameplay.Victory", "value": "VICTORY!"},
+        ]),
+    ]
+
+    # Asset Manager cook label
+    spec.primary_asset_labels = [
+        PrimaryAssetLabelSpec(
+            "PAL_PuzzleFighter", "/Game/Generated/PuzzleFighter",
+            priority=1, chunk_id=1,
+            include_paths=["/Game/Generated/PuzzleFighter"],
+        ),
+    ]
+
     spec.acceptance_tests = [
         "All 19 Blueprint assets exist and compiled",
         "All 10 Widget assets exist",
@@ -482,6 +573,15 @@ def _puzzle_fighter_spec(prompt: str) -> BuildSpec:
         "All 16 data assets exist",
         "All 3 maps exist",
         "Input mappings written to DefaultInput.ini",
+        "BB_PF_AI blackboard exists",
+        "BT_PF_AI behavior tree exists",
+        "EQS_PF_BestColumn query exists",
+        "2 sound attenuations exist",
+        "2 sound classes exist",
+        "SM_PF_Gameplay sound mix exists",
+        "2 level sequences exist",
+        "ST_PF_UI string table exists with 9 entries",
+        "PAL_PuzzleFighter primary asset label exists",
     ]
 
     return spec

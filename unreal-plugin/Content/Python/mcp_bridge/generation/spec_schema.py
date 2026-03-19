@@ -65,6 +65,154 @@ class InputMappingSpec:
     axis_mappings: List[Dict[str, Any]] = field(default_factory=list)
 
 
+# ---------------------------------------------------------------------------
+# Animation
+# ---------------------------------------------------------------------------
+
+@dataclass
+class AnimBlueprintSpec:
+    name: str                        # e.g. ABP_Character
+    content_path: str                # e.g. /Game/Generated/Animation
+    skeleton_path: str               # content path to target USkeleton asset
+    state_machines: List[Dict[str, Any]] = field(default_factory=list)
+    # Each state machine: {"name": str, "states": [{"name", "anim_sequence_path"}],
+    #                      "transitions": [{"from", "to", "condition"}]}
+
+
+@dataclass
+class BlendSpaceSpec:
+    name: str
+    content_path: str
+    skeleton_path: str
+    axis_x: Dict[str, Any] = field(default_factory=dict)   # {"name", "min", "max"}
+    axis_y: Optional[Dict[str, Any]] = None                # None = 1D blend space
+    samples: List[Dict[str, Any]] = field(default_factory=list)
+    # Each sample: {"anim_path", "x", "y"}
+
+
+@dataclass
+class AnimMontageSpec:
+    name: str
+    content_path: str
+    skeleton_path: str
+    anim_sequence_path: str
+    notifies: List[Dict[str, Any]] = field(default_factory=list)
+    # Each notify: {"name", "time", "type"}  e.g. type "Sound", "Effect"
+
+
+# ---------------------------------------------------------------------------
+# AI
+# ---------------------------------------------------------------------------
+
+@dataclass
+class BlackboardSpec:
+    name: str
+    content_path: str
+    keys: List[Dict[str, Any]] = field(default_factory=list)
+    # Each key: {"name": str, "type": "Bool"|"Float"|"Int"|"Name"|"Object"|"Vector"|"Enum"}
+
+
+@dataclass
+class BehaviorTreeSpec:
+    name: str
+    content_path: str
+    blackboard_path: str             # content path to associated Blackboard asset
+    # Root composite and child tasks described as nested dict tree
+    root: Dict[str, Any] = field(default_factory=dict)
+    # {"type": "Selector"|"Sequence", "children": [...],
+    #  "tasks": [{"type": "BTTask_MoveTo"|"BTTask_Wait"|..., "params": {...}}]}
+
+
+@dataclass
+class EQSQuerySpec:
+    name: str
+    content_path: str
+    generator_type: str = "ActorsOfClass"  # ActorsOfClass | Donut | SimpleGrid | Cone
+    tests: List[Dict[str, Any]] = field(default_factory=list)
+    # Each test: {"type": "Distance"|"Dot"|"Trace"|"GameplayTag", "scoring": "..."}
+
+
+# ---------------------------------------------------------------------------
+# Audio
+# ---------------------------------------------------------------------------
+
+@dataclass
+class SoundAttenuationSpec:
+    name: str
+    content_path: str
+    radius_min: float = 100.0
+    radius_max: float = 2000.0
+    falloff_model: str = "Logarithmic"  # Logarithmic | Linear | Inverse | LogReverse
+    occlusion_enabled: bool = False
+    spatialization_enabled: bool = True
+
+
+@dataclass
+class SoundClassSpec:
+    name: str
+    content_path: str
+    volume: float = 1.0
+    pitch: float = 1.0
+    parent_class_path: Optional[str] = None
+
+
+@dataclass
+class SoundMixSpec:
+    name: str
+    content_path: str
+    fade_in_time: float = 0.1
+    fade_out_time: float = 0.1
+    # Modifiers per sound class
+    modifiers: List[Dict[str, Any]] = field(default_factory=list)
+    # Each modifier: {"sound_class_path": str, "volume": float, "pitch": float}
+
+
+# ---------------------------------------------------------------------------
+# Sequencer
+# ---------------------------------------------------------------------------
+
+@dataclass
+class LevelSequenceSpec:
+    name: str
+    content_path: str
+    duration_seconds: float = 5.0
+    # Tracks to add: camera cuts, actor transform, event tracks, audio
+    tracks: List[Dict[str, Any]] = field(default_factory=list)
+    # Each track: {"type": "CameraCut"|"Transform"|"Event"|"Audio",
+    #              "actor_path": str, "keyframes": [...]}
+
+
+# ---------------------------------------------------------------------------
+# Localization
+# ---------------------------------------------------------------------------
+
+@dataclass
+class StringTableSpec:
+    name: str
+    content_path: str
+    namespace: str                   # e.g. "PuzzleFighter"
+    entries: List[Dict[str, str]] = field(default_factory=list)
+    # Each entry: {"key": str, "value": str}
+
+
+# ---------------------------------------------------------------------------
+# Asset Manager / cook
+# ---------------------------------------------------------------------------
+
+@dataclass
+class PrimaryAssetLabelSpec:
+    name: str
+    content_path: str
+    priority: int = 1
+    chunk_id: int = 0
+    # Paths to include in this label's cook chunk
+    include_paths: List[str] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Top-level BuildSpec
+# ---------------------------------------------------------------------------
+
 @dataclass
 class BuildSpec:
     feature_name: str
@@ -77,6 +225,31 @@ class BuildSpec:
     data_assets: List[DataAssetSpec] = field(default_factory=list)
     levels: List[LevelSpec] = field(default_factory=list)
     input_mappings: InputMappingSpec = field(default_factory=InputMappingSpec)
+
+    # Animation
+    anim_blueprints: List[AnimBlueprintSpec] = field(default_factory=list)
+    blend_spaces: List[BlendSpaceSpec] = field(default_factory=list)
+    anim_montages: List[AnimMontageSpec] = field(default_factory=list)
+
+    # AI
+    blackboards: List[BlackboardSpec] = field(default_factory=list)
+    behavior_trees: List[BehaviorTreeSpec] = field(default_factory=list)
+    eqs_queries: List[EQSQuerySpec] = field(default_factory=list)
+
+    # Audio
+    sound_attenuations: List[SoundAttenuationSpec] = field(default_factory=list)
+    sound_classes: List[SoundClassSpec] = field(default_factory=list)
+    sound_mixes: List[SoundMixSpec] = field(default_factory=list)
+
+    # Sequencer
+    level_sequences: List[LevelSequenceSpec] = field(default_factory=list)
+
+    # Localization
+    string_tables: List[StringTableSpec] = field(default_factory=list)
+
+    # Asset Manager / cook
+    primary_asset_labels: List[PrimaryAssetLabelSpec] = field(default_factory=list)
+
     placeholder_policy: str = "generate"  # "generate" | "skip" | "stub_only"
     acceptance_tests: List[str] = field(default_factory=list)
 

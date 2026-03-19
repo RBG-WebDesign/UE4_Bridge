@@ -15,6 +15,15 @@ from mcp_bridge.generation.asset_generator import generate_all_materials, genera
 from mcp_bridge.generation.level_generator import generate_all_levels
 from mcp_bridge.generation.compile_loop import compile_all_blueprints
 from mcp_bridge.generation.manifest import write_manifest
+from mcp_bridge.generation.ai_generator import (
+    generate_all_blackboards, generate_all_behavior_trees, generate_all_eqs_queries,
+)
+from mcp_bridge.generation.audio_generator import (
+    generate_all_sound_attenuations, generate_all_sound_classes, generate_all_sound_mixes,
+)
+from mcp_bridge.generation.sequence_generator import generate_all_level_sequences
+from mcp_bridge.generation.localization_generator import generate_all_string_tables
+from mcp_bridge.generation.cook_generator import generate_all_primary_asset_labels
 
 
 def _get_output_dir() -> str:
@@ -125,6 +134,38 @@ def handle_prompt_generate(params: Dict[str, Any]) -> Dict[str, Any]:
         level_result = generate_all_levels(spec.levels)
         generation_results["levels"] = level_result
 
+        # AI assets
+        bb_result = generate_all_blackboards(spec.blackboards)
+        generation_results["blackboards"] = bb_result
+
+        bt_result = generate_all_behavior_trees(spec.behavior_trees)
+        generation_results["behavior_trees"] = bt_result
+
+        eqs_result = generate_all_eqs_queries(spec.eqs_queries)
+        generation_results["eqs_queries"] = eqs_result
+
+        # Audio assets
+        attn_result = generate_all_sound_attenuations(spec.sound_attenuations)
+        generation_results["sound_attenuations"] = attn_result
+
+        sc_result = generate_all_sound_classes(spec.sound_classes)
+        generation_results["sound_classes"] = sc_result
+
+        mix_result = generate_all_sound_mixes(spec.sound_mixes)
+        generation_results["sound_mixes"] = mix_result
+
+        # Sequencer
+        seq_result = generate_all_level_sequences(spec.level_sequences)
+        generation_results["level_sequences"] = seq_result
+
+        # Localization
+        st_result = generate_all_string_tables(spec.string_tables)
+        generation_results["string_tables"] = st_result
+
+        # Cook labels
+        pal_result = generate_all_primary_asset_labels(spec.primary_asset_labels)
+        generation_results["primary_asset_labels"] = pal_result
+
         # Phase 3: Input mappings
         try:
             import unreal
@@ -153,19 +194,20 @@ def handle_prompt_generate(params: Dict[str, Any]) -> Dict[str, Any]:
         )
 
         # Build summary counts
+        _new_results = [
+            bb_result, bt_result, eqs_result,
+            attn_result, sc_result, mix_result,
+            seq_result, st_result, pal_result,
+        ]
         total_assets = (
-            bp_result["total"]
-            + widget_result["total"]
-            + mat_result["total"]
-            + data_result["total"]
-            + level_result["total"]
+            bp_result["total"] + widget_result["total"]
+            + mat_result["total"] + data_result["total"] + level_result["total"]
+            + sum(r["total"] for r in _new_results)
         )
         total_succeeded = (
-            bp_result["succeeded"]
-            + widget_result["succeeded"]
-            + mat_result["succeeded"]
-            + data_result["succeeded"]
-            + level_result["succeeded"]
+            bp_result["succeeded"] + widget_result["succeeded"]
+            + mat_result["succeeded"] + data_result["succeeded"] + level_result["succeeded"]
+            + sum(r["succeeded"] for r in _new_results)
         )
 
         return {
