@@ -30,7 +30,7 @@ def handle_pie_start(params: Dict[str, Any]) -> Dict[str, Any]:
             return {
                 "success": False,
                 "data": {},
-                "error": f"PIE did not become ready within {pie_harness._PIE_READY_TIMEOUT_S}s",
+                "error": "PIE did not become ready within 30s",
             }
         return {"success": True, "data": {"status": "pie_ready"}}
     except Exception as e:
@@ -41,7 +41,9 @@ def handle_pie_stop(params: Dict[str, Any]) -> Dict[str, Any]:
     """End the current PIE session."""
     try:
         ok = pie_harness.stop_pie()
-        return {"success": ok, "data": {"status": "pie_stopped" if ok else "stop_failed"}}
+        if ok:
+            return {"success": True, "data": {"status": "pie_stopped"}}
+        return {"success": False, "data": {"status": "stop_failed"}, "error": "stop_pie() returned False"}
     except Exception as e:
         return {"success": False, "data": {}, "error": str(e)}
 
