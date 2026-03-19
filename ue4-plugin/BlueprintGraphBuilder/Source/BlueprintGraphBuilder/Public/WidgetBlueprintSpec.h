@@ -3,12 +3,6 @@
 #include "CoreMinimal.h"
 #include "Dom/JsonValue.h"
 #include "Layout/Margin.h"
-#include "Math/Vector2D.h"
-#include "Containers/UnrealString.h"
-#include "Containers/Array.h"
-#include "Containers/Map.h"
-#include "Templates/SharedPointer.h"
-
 
 enum class EWidgetCategory : uint8
 {
