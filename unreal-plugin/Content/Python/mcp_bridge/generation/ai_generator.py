@@ -67,7 +67,7 @@ def generate_blackboard(spec: BlackboardSpec) -> Tuple[bool, str, Dict[str, Any]
 
 
 def generate_behavior_tree(spec: BehaviorTreeSpec) -> Tuple[bool, str, Dict[str, Any]]:
-    """Create a BehaviorTree asset and assign its Blackboard."""
+    """Create a BehaviorTree asset, assign its Blackboard, and build node graph."""
     try:
         import unreal
 
@@ -86,17 +86,47 @@ def generate_behavior_tree(spec: BehaviorTreeSpec) -> Tuple[bool, str, Dict[str,
         if bt is None:
             return False, f"Failed to create BehaviorTree: {full_path}", {}
 
-        # Assign blackboard
+        # Assign blackboard BEFORE building nodes (builder needs it for key validation)
+        blackboard_assigned = False
         if spec.blackboard_path:
             bb = unreal.EditorAssetLibrary.load_asset(spec.blackboard_path)
             if bb:
                 try:
                     bt.set_editor_property("blackboard_asset", bb)
+                    blackboard_assigned = True
                 except Exception:
                     pass
 
+        # Build node graph via C++ plugin
+        graph_built = False
+        builder_available = False
+        build_error = ""
+
+        if isinstance(spec.root, dict) and "type" in spec.root:
+            import json as json_mod
+            lib = getattr(unreal, "BehaviorTreeBuilderLibrary", None)
+            if lib and hasattr(lib, "build_behavior_tree_from_json"):
+                builder_available = True
+                try:
+                    json_str = json_mod.dumps({"root": spec.root})
+                    build_error = lib.build_behavior_tree_from_json(bt, json_str)
+                    graph_built = (build_error == "")
+                except Exception as e:
+                    build_error = str(e)
+
+        success = graph_built or not builder_available
+        if build_error and builder_available:
+            success = False
+
         unreal.EditorAssetLibrary.save_asset(full_path)
-        return True, "", {"path": full_path, "blackboard": spec.blackboard_path, "skipped": False}
+        return success, build_error, {
+            "path": full_path,
+            "blackboard": spec.blackboard_path,
+            "blackboard_assigned": blackboard_assigned,
+            "builder_available": builder_available,
+            "graph_built": graph_built,
+            "skipped": False,
+        }
 
     except Exception as e:
         return False, str(e), {}
