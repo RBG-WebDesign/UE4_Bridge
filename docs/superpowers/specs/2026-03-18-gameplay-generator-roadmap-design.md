@@ -106,11 +106,12 @@ Compile success is not gameplay success.
 PIE control:
 - `unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).play_in_editor(in_editor=False)` -- launches PIE in a separate window, not in-editor, which avoids game-thread blocking
 - `unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).request_end_play_map()` -- ends PIE
-- PIE is asynchronous. After calling `play_in_editor()`, the harness polls
-  `unreal.EditorLevelUtils` or output log for a "PIE started" marker before proceeding
-  with assertions. Poll interval: 0.5s, max wait: 30s, implemented via
+- PIE is asynchronous. After calling `play_in_editor()`, the harness polls the log file
+  for the string `"PIE: play in editor start"` (the exact string UE4.27 emits to the
+  output log when PIE is ready). Poll interval: 0.5s, max wait: 30s, implemented via
   `register_slate_post_tick_callback` (the same mechanism the HTTP listener uses for
-  game-thread marshaling).
+  game-thread marshaling). If the marker is not found within 30s, `wait_for_pie_ready`
+  returns False and `run_assertions` fails all predicates with `observed: "PIE timeout"`.
 
 Log capture:
 - UE4.27 Python exposes `unreal.PythonLogOutputDevice` or the `unreal.log` system does
@@ -151,9 +152,21 @@ The `survive:N` predicate (replaces `no_crash:5s`) waits N seconds then checks t
 the PIE session ends and the HTTP listener stops responding; `run_assertions` returns a
 timeout failure for all remaining predicates.
 
-**TypeScript:** `mcp-server/src/tools/gameplay.ts` defines `gameplay_pie_start`,
-`gameplay_pie_stop`, `gameplay_telemetry_snapshot`, `gameplay_run_acceptance_tests`
-with Zod schemas following the same pattern as `blueprints.ts`.
+**TypeScript:** `mcp-server/src/tools/gameplay.ts` defines all 6 gameplay commands
+with Zod schemas following the same pattern as `blueprints.ts`. Minimum schema fields:
+
+| Command | Required params | Optional params |
+|---|---|---|
+| `gameplay_pie_start` | (none) | `level_path: string` |
+| `gameplay_pie_stop` | (none) | (none) |
+| `gameplay_telemetry_snapshot` | (none) | (none) |
+| `gameplay_run_acceptance_tests` | `tests: string[]` | `timeout_seconds: number` |
+| `gameplay_cook_validate` | `map_path: string` | `platform: string` |
+| `gameplay_import_asset` | `source_path: string`, `content_path: string` | `options: object` |
+
+`gameplay_cook_validate` resolves the `UE4Editor-cmd.exe` path at runtime via
+`unreal.Paths.engine_dir()` + `"Binaries/Win64/UE4Editor-Cmd.exe"` inside the Python
+handler -- it is not a caller-supplied parameter.
 
 **Success criteria:**
 - `gameplay_pie_start` launches PIE and returns `{success: true}` once the PIE world is ready
@@ -277,11 +290,12 @@ class TimelineSpec:
 - `generation/spec_schema.py` -- add `TimelineSpec`, add `timelines: List[TimelineSpec]` to `BuildSpec`
 - `generation/blueprint_generator.py` -- call `timeline_generator` before graph build
 
-**Success criteria:** A door Blueprint with a `TimelineSpec` for a 1-second float track
-opens smoothly in PIE -- the `UK2Node_Timeline` node is present in the graph and the
-door rotates over 1 second when the trigger fires.
+**Success criteria:**
+- `UK2Node_Timeline` node is present in the door Blueprint's event graph (verifiable in the Blueprint editor without running PIE)
+- `CurveFloat` asset exists at the specified `content_path`
+- Bonus (requires Phase 1): door rotates over 1 second in PIE when trigger fires
 
-**Prerequisites:** None.
+**Prerequisites:** None. Phase 1 is recommended for full runtime validation of the success criteria but not required to implement or merge this phase.
 
 ---
 
@@ -430,7 +444,11 @@ Blueprint compile errors also appear in the editor output log as `LogKismet: Err
 - A Blueprint with a pin type mismatch compiles after a conversion node is inserted
 - All three cases verified without human input
 
-**Prerequisites:** Phase 1 log-scraping mechanism (telemetry_capture log cursor) is reused here to read `LogKismet` errors. Phase 1 must exist first.
+**Prerequisites:** Phase 1's `telemetry_capture.py` log-file cursor utility is reused here
+to read `LogKismet: Error:` lines. Only that file-reading utility is needed, not the full
+PIE harness. If implementing Phase 4 before Phase 1, the log-cursor code can be written
+directly in `repair_engine.py` and later extracted into `telemetry_capture.py` when
+Phase 1 is built.
 
 ---
 
@@ -496,9 +514,16 @@ process that spawns it must release its lock by having already saved all assets 
 the cook subprocess starts. The cook subprocess reads cooked assets from the saved
 versions, not from the live editor memory.
 
+The `UE4Editor-Cmd.exe` path is resolved at runtime inside `cook_validator.py` via:
+```python
+unreal.Paths.engine_dir() + "Binaries/Win64/UE4Editor-Cmd.exe"
+```
+It is not a caller-supplied parameter. The project file path is resolved via
+`unreal.Paths.get_project_file_path()`.
+
 **New files:**
 - `generation/cook_validator.py`:
-  - `run_cook(map_path: str, ue4_editor_cmd: str) -> CookResult`
+  - `run_cook(map_path: str) -> CookResult`
   - `parse_cook_log(log: str) -> List[CookError]`
 
 `CookError` fields: `asset_path`, `error_type` (`missing_ref`, `editor_only`, `stripped`), `message`
