@@ -28,4 +28,9 @@ private:
 
 	void RegisterTypes();
 	static void AddCommonProperties(FWidgetTypeInfo& Info);
+	void RegisterPanel(const FString& TypeName, TSubclassOf<UWidget> WidgetClass);
+	void RegisterContent(const FString& TypeName, TSubclassOf<UWidget> WidgetClass,
+		TArray<FWidgetPropertyDescriptor> TypeSpecificProps = {});
+	void RegisterLeaf(const FString& TypeName, TSubclassOf<UWidget> WidgetClass,
+		TArray<FWidgetPropertyDescriptor> TypeSpecificProps);
 };
