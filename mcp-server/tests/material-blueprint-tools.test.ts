@@ -92,15 +92,16 @@ test("all 4 material tools are registered", async () => {
   assertEqual(materialTools.length, 4, "material tool count");
 });
 
-test("all 6 blueprint tools are registered", async () => {
+test("all blueprint tools are registered", async () => {
   const expectedNames = [
     "blueprint_list", "blueprint_info", "blueprint_create",
     "blueprint_compile", "blueprint_document", "blueprint_build_from_json",
+    "blueprint_build_from_description",
   ];
   for (const name of expectedNames) {
     assert(toolMap.has(name), `Tool '${name}' should be registered`);
   }
-  assertEqual(blueprintTools.length, 6, "blueprint tool count");
+  assertEqual(blueprintTools.length, 7, "blueprint tool count");
 });
 
 // ---- material_list Tests ----
