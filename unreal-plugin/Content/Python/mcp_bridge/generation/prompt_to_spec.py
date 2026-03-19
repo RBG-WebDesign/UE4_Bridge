@@ -63,7 +63,7 @@ def _simple_canvas(name: str, title_text: str = "") -> Dict:
                 "name": f"{name}Title",
                 "properties": {
                     "text": title_text or name,
-                    "colorAndOpacity": {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0},
+                    "color": {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0},
                 },
                 "slot": {"position": {"x": 100, "y": 100}, "size": {"x": 600, "y": 80}},
             }
@@ -82,7 +82,7 @@ def _main_menu_widget_tree(game_title: str = "GAME") -> Dict:
                 "name": "GameTitle",
                 "properties": {
                     "text": game_title,
-                    "colorAndOpacity": {"r": 1.0, "g": 0.8, "b": 0.0, "a": 1.0},
+                    "color": {"r": 1.0, "g": 0.8, "b": 0.0, "a": 1.0},
                 },
                 "slot": {"position": {"x": 200, "y": 60}, "size": {"x": 600, "y": 100}},
             },
@@ -95,7 +95,6 @@ def _main_menu_widget_tree(game_title: str = "GAME") -> Dict:
                         "type": "Button",
                         "name": "PlayButton",
                         "properties": {
-                            "backgroundColor": {"r": 0.1, "g": 0.5, "b": 0.1, "a": 1.0}
                         },
                         "children": [
                             {
@@ -103,7 +102,7 @@ def _main_menu_widget_tree(game_title: str = "GAME") -> Dict:
                                 "name": "PlayText",
                                 "properties": {
                                     "text": "Play Game",
-                                    "colorAndOpacity": {"r": 1, "g": 1, "b": 1, "a": 1},
+                                    "color": {"r": 1, "g": 1, "b": 1, "a": 1},
                                 },
                             }
                         ],
@@ -112,7 +111,6 @@ def _main_menu_widget_tree(game_title: str = "GAME") -> Dict:
                         "type": "Button",
                         "name": "SettingsButton",
                         "properties": {
-                            "backgroundColor": {"r": 0.2, "g": 0.2, "b": 0.5, "a": 1.0}
                         },
                         "children": [
                             {
@@ -120,7 +118,7 @@ def _main_menu_widget_tree(game_title: str = "GAME") -> Dict:
                                 "name": "SettingsText",
                                 "properties": {
                                     "text": "Settings",
-                                    "colorAndOpacity": {"r": 1, "g": 1, "b": 1, "a": 1},
+                                    "color": {"r": 1, "g": 1, "b": 1, "a": 1},
                                 },
                             }
                         ],
@@ -129,7 +127,6 @@ def _main_menu_widget_tree(game_title: str = "GAME") -> Dict:
                         "type": "Button",
                         "name": "QuitButton",
                         "properties": {
-                            "backgroundColor": {"r": 0.5, "g": 0.1, "b": 0.1, "a": 1.0}
                         },
                         "children": [
                             {
@@ -137,7 +134,7 @@ def _main_menu_widget_tree(game_title: str = "GAME") -> Dict:
                                 "name": "QuitText",
                                 "properties": {
                                     "text": "Quit",
-                                    "colorAndOpacity": {"r": 1, "g": 1, "b": 1, "a": 1},
+                                    "color": {"r": 1, "g": 1, "b": 1, "a": 1},
                                 },
                             }
                         ],
@@ -159,7 +156,7 @@ def _hud_widget_tree() -> Dict:
                 "name": "ScoreLabel",
                 "properties": {
                     "text": "Score: 0",
-                    "colorAndOpacity": {"r": 1, "g": 1, "b": 1, "a": 1},
+                    "color": {"r": 1, "g": 1, "b": 1, "a": 1},
                 },
                 "slot": {"position": {"x": 20, "y": 20}, "size": {"x": 200, "y": 40}},
             },
@@ -168,17 +165,14 @@ def _hud_widget_tree() -> Dict:
                 "name": "TimerLabel",
                 "properties": {
                     "text": "00:00",
-                    "colorAndOpacity": {"r": 1, "g": 0.9, "b": 0.0, "a": 1},
+                    "color": {"r": 1, "g": 0.9, "b": 0.0, "a": 1},
                 },
                 "slot": {"position": {"x": 400, "y": 20}, "size": {"x": 200, "y": 40}},
             },
             {
-                "type": "ProgressBar",
+                "type": "TextBlock",
                 "name": "ComboMeter",
-                "properties": {
-                    "percent": 0.0,
-                    "fillColorAndOpacity": {"r": 1.0, "g": 0.5, "b": 0.0, "a": 1.0},
-                },
+                "properties": {"text": "Combo: 0"},
                 "slot": {"position": {"x": 20, "y": 70}, "size": {"x": 300, "y": 20}},
             },
         ],
@@ -196,7 +190,7 @@ def _score_display_widget_tree() -> Dict:
                 "name": "ScoreValue",
                 "properties": {
                     "text": "0",
-                    "colorAndOpacity": {"r": 1, "g": 1, "b": 0, "a": 1},
+                    "color": {"r": 1, "g": 1, "b": 0, "a": 1},
                 },
                 "slot": {"position": {"x": 0, "y": 0}, "size": {"x": 200, "y": 60}},
             }
@@ -215,7 +209,7 @@ def _timer_widget_tree() -> Dict:
                 "name": "TimerValue",
                 "properties": {
                     "text": "99",
-                    "colorAndOpacity": {"r": 1.0, "g": 0.3, "b": 0.3, "a": 1.0},
+                    "color": {"r": 1.0, "g": 0.3, "b": 0.3, "a": 1.0},
                 },
                 "slot": {"position": {"x": 0, "y": 0}, "size": {"x": 120, "y": 60}},
             }
@@ -234,7 +228,7 @@ def _combo_popup_widget_tree() -> Dict:
                 "name": "ComboText",
                 "properties": {
                     "text": "COMBO!",
-                    "colorAndOpacity": {"r": 1.0, "g": 0.8, "b": 0.0, "a": 1.0},
+                    "color": {"r": 1.0, "g": 0.8, "b": 0.0, "a": 1.0},
                 },
                 "slot": {"position": {"x": 0, "y": 0}, "size": {"x": 300, "y": 80}},
             },
@@ -243,7 +237,7 @@ def _combo_popup_widget_tree() -> Dict:
                 "name": "ComboMultiplier",
                 "properties": {
                     "text": "x2",
-                    "colorAndOpacity": {"r": 1.0, "g": 0.5, "b": 0.0, "a": 1.0},
+                    "color": {"r": 1.0, "g": 0.5, "b": 0.0, "a": 1.0},
                 },
                 "slot": {"position": {"x": 0, "y": 80}, "size": {"x": 200, "y": 60}},
             },
@@ -260,7 +254,7 @@ def _pause_menu_widget_tree() -> Dict:
             {
                 "type": "Border",
                 "name": "PauseBackground",
-                "properties": {"brushColor": {"r": 0.0, "g": 0.0, "b": 0.0, "a": 0.7}},
+                "properties": {},
                 "slot": {"position": {"x": 0, "y": 0}, "size": {"x": 1920, "y": 1080}},
                 "children": [
                     {
@@ -272,7 +266,7 @@ def _pause_menu_widget_tree() -> Dict:
                                 "name": "PauseTitle",
                                 "properties": {
                                     "text": "PAUSED",
-                                    "colorAndOpacity": {"r": 1, "g": 1, "b": 1, "a": 1},
+                                    "color": {"r": 1, "g": 1, "b": 1, "a": 1},
                                 },
                             },
                             {
@@ -316,7 +310,7 @@ def _game_over_widget_tree() -> Dict:
                 "name": "GameOverTitle",
                 "properties": {
                     "text": "GAME OVER",
-                    "colorAndOpacity": {"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0},
+                    "color": {"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0},
                 },
                 "slot": {"position": {"x": 300, "y": 300}, "size": {"x": 600, "y": 100}},
             },
@@ -325,7 +319,7 @@ def _game_over_widget_tree() -> Dict:
                 "name": "FinalScore",
                 "properties": {
                     "text": "Final Score: 0",
-                    "colorAndOpacity": {"r": 1, "g": 1, "b": 1, "a": 1},
+                    "color": {"r": 1, "g": 1, "b": 1, "a": 1},
                 },
                 "slot": {"position": {"x": 350, "y": 420}, "size": {"x": 400, "y": 60}},
             },
@@ -339,7 +333,7 @@ def _game_over_widget_tree() -> Dict:
                         "name": "RetryText",
                         "properties": {
                             "text": "Retry",
-                            "colorAndOpacity": {"r": 1, "g": 1, "b": 1, "a": 1},
+                            "color": {"r": 1, "g": 1, "b": 1, "a": 1},
                         },
                     }
                 ],

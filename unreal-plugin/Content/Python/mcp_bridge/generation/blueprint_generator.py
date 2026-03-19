@@ -110,13 +110,8 @@ def generate_blueprint(spec: BlueprintSpec) -> Tuple[bool, str, Dict[str, Any]]:
             except Exception:
                 pass  # graph failure is non-fatal
 
-        # Compile
-        try:
-            unreal.KismetSystemLibrary.compile_blueprint(bp)
-        except Exception:
-            pass
-
-        # Save
+        # Save (triggers BP compilation on the game thread; KismetSystemLibrary
+        # is not exposed in UE4.27 Python bindings)
         try:
             unreal.EditorAssetLibrary.save_asset(bp.get_path_name())
         except Exception:

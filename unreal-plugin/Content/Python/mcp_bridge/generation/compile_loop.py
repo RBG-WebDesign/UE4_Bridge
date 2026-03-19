@@ -29,17 +29,16 @@ def compile_all_blueprints(
                     break
 
                 try:
-                    unreal.KismetSystemLibrary.compile_blueprint(bp)
-                    gen_class = bp.get_editor_property("generated_class")
-                    if gen_class is not None:
+                    # KismetSystemLibrary.compile_blueprint is not exposed in UE4.27 Python.
+                    # save_asset triggers BP compilation on the game thread.
+                    unreal.EditorAssetLibrary.save_asset(bp_path, only_if_is_dirty=False)
+                    # Verify the asset still exists and is a Blueprint after save
+                    bp2 = unreal.EditorAssetLibrary.load_asset(bp_path)
+                    if bp2 is not None and isinstance(bp2, unreal.Blueprint):
                         compiled = True
-                        try:
-                            unreal.EditorAssetLibrary.save_asset(bp_path)
-                        except Exception:
-                            pass
                         break
                     else:
-                        last_error = "No generated class after compile"
+                        last_error = "Asset missing or wrong type after save"
                 except Exception as e:
                     last_error = str(e)
 

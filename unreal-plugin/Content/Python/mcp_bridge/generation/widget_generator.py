@@ -29,19 +29,18 @@ def generate_widget(spec: WidgetSpec) -> Tuple[bool, str, Dict[str, Any]]:
             return False, "WidgetBlueprintBuilderLibrary not available -- is BlueprintGraphBuilder plugin loaded?", {}
 
         json_str = json.dumps({"root": spec.root_widget})
-        err_out = ""
 
-        ok = lib.build_widget_from_json(
+        # Returns empty string on success, error message on failure
+        err_out = lib.build_widget_from_json(
             spec.content_path,
             spec.name,
             json_str,
-            err_out,
         )
 
-        if ok:
+        if err_out == "":
             return True, "", {"path": full_path, "skipped": False}
         else:
-            return False, str(err_out) or "build_widget_from_json returned false", {}
+            return False, str(err_out) or "build_widget_from_json returned error", {}
 
     except Exception as e:
         return False, str(e), {}
