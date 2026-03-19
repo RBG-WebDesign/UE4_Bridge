@@ -3,3 +3,8 @@ mcp-server/dist/
 *.log
 .DS_Store
 Thumbs.db
+
+.worktrees/
+task-queue.md
+decisions.md
+.orchestrator/
