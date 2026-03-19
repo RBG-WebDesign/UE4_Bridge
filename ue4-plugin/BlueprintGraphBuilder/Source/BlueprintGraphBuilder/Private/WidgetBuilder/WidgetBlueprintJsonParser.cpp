@@ -5,7 +5,18 @@
 // Valid keys at node level
 static const TSet<FString> ValidNodeKeys = { TEXT("type"), TEXT("name"), TEXT("properties"), TEXT("slot"), TEXT("children") };
 // Valid keys in slot
-static const TSet<FString> ValidSlotKeys = { TEXT("position"), TEXT("size"), TEXT("alignment"), TEXT("padding"), TEXT("zOrder"), TEXT("autoSize") };
+static const TSet<FString> ValidSlotKeys = {
+	TEXT("position"), TEXT("size"), TEXT("alignment"), TEXT("padding"),
+	TEXT("zOrder"), TEXT("autoSize"),
+	TEXT("row"), TEXT("column"), TEXT("rowSpan"), TEXT("columnSpan"),
+	TEXT("horizontalAlignment"), TEXT("verticalAlignment")
+};
+// Valid top-level keys
+static const TSet<FString> ValidTopLevelKeys = { TEXT("root"), TEXT("animations") };
+// Valid keys in an animation entry
+static const TSet<FString> ValidAnimationKeys = { TEXT("name"), TEXT("target"), TEXT("duration"), TEXT("tracks") };
+// Valid keys in an opacity track
+static const TSet<FString> ValidOpacityTrackKeys = { TEXT("type"), TEXT("from"), TEXT("to") };
 
 bool FWidgetBlueprintJsonParser::Parse(const FString& JsonString, FWidgetBlueprintSpec& OutSpec, FString& OutError)
 {
@@ -18,6 +29,16 @@ bool FWidgetBlueprintJsonParser::Parse(const FString& JsonString, FWidgetBluepri
 		return false;
 	}
 
+	// Validate top-level keys
+	for (const auto& Pair : RootObj->Values)
+	{
+		if (!ValidTopLevelKeys.Contains(Pair.Key))
+		{
+			OutError = FString::Printf(TEXT("[WidgetBuilder] Unknown top-level key '%s'"), *Pair.Key);
+			return false;
+		}
+	}
+
 	const TSharedPtr<FJsonObject>* RootNodeObj = nullptr;
 	if (!RootObj->TryGetObjectField(TEXT("root"), RootNodeObj))
 	{
@@ -25,7 +46,22 @@ bool FWidgetBlueprintJsonParser::Parse(const FString& JsonString, FWidgetBluepri
 		return false;
 	}
 
-	return ParseWidgetNode(*RootNodeObj, OutSpec.Root, TEXT(""), OutError);
+	if (!ParseWidgetNode(*RootNodeObj, OutSpec.Root, TEXT(""), OutError))
+	{
+		return false;
+	}
+
+	// Optional: animations
+	const TArray<TSharedPtr<FJsonValue>>* AnimArray = nullptr;
+	if (RootObj->TryGetArrayField(TEXT("animations"), AnimArray))
+	{
+		if (!ParseAnimations(AnimArray, OutSpec.Animations, OutError))
+		{
+			return false;
+		}
+	}
+
+	return true;
 }
 
 bool FWidgetBlueprintJsonParser::ParseWidgetNode(
@@ -177,6 +213,54 @@ bool FWidgetBlueprintJsonParser::ParseSlotSpec(
 		OutSlot.bHasAutoSize = true;
 	}
 
+	// row
+	double RowVal;
+	if (SlotObj->TryGetNumberField(TEXT("row"), RowVal))
+	{
+		OutSlot.Row = static_cast<int32>(RowVal);
+		OutSlot.bHasRow = true;
+	}
+
+	// column
+	double ColVal;
+	if (SlotObj->TryGetNumberField(TEXT("column"), ColVal))
+	{
+		OutSlot.Column = static_cast<int32>(ColVal);
+		OutSlot.bHasColumn = true;
+	}
+
+	// rowSpan
+	double RowSpanVal;
+	if (SlotObj->TryGetNumberField(TEXT("rowSpan"), RowSpanVal))
+	{
+		OutSlot.RowSpan = static_cast<int32>(RowSpanVal);
+		OutSlot.bHasRowSpan = true;
+	}
+
+	// columnSpan
+	double ColSpanVal;
+	if (SlotObj->TryGetNumberField(TEXT("columnSpan"), ColSpanVal))
+	{
+		OutSlot.ColumnSpan = static_cast<int32>(ColSpanVal);
+		OutSlot.bHasColumnSpan = true;
+	}
+
+	// horizontalAlignment
+	FString HAStr;
+	if (SlotObj->TryGetStringField(TEXT("horizontalAlignment"), HAStr))
+	{
+		OutSlot.HorizontalAlignment = HAStr;
+		OutSlot.bHasHorizontalAlignment = true;
+	}
+
+	// verticalAlignment
+	FString VAStr;
+	if (SlotObj->TryGetStringField(TEXT("verticalAlignment"), VAStr))
+	{
+		OutSlot.VerticalAlignment = VAStr;
+		OutSlot.bHasVerticalAlignment = true;
+	}
+
 	return true;
 }
 
@@ -191,5 +275,124 @@ bool FWidgetBlueprintJsonParser::ParseProperties(
 	{
 		OutProperties.Add(Pair.Key, Pair.Value);
 	}
+	return true;
+}
+
+bool FWidgetBlueprintJsonParser::ParseAnimations(
+	const TArray<TSharedPtr<FJsonValue>>* AnimArray,
+	TArray<FWidgetAnimationSpec>& OutAnimations,
+	FString& OutError)
+{
+	for (int32 i = 0; i < AnimArray->Num(); ++i)
+	{
+		const TSharedPtr<FJsonObject>& AnimObj = (*AnimArray)[i]->AsObject();
+		if (!AnimObj.IsValid())
+		{
+			OutError = FString::Printf(TEXT("[WidgetBuilder] animations[%d]: not a valid object"), i);
+			return false;
+		}
+
+		// Check for unknown keys
+		for (const auto& Pair : AnimObj->Values)
+		{
+			if (!ValidAnimationKeys.Contains(Pair.Key))
+			{
+				OutError = FString::Printf(TEXT("[WidgetBuilder] animations[%d]: unknown key '%s'"), i, *Pair.Key);
+				return false;
+			}
+		}
+
+		FWidgetAnimationSpec AnimSpec;
+
+		// Required: name
+		if (!AnimObj->TryGetStringField(TEXT("name"), AnimSpec.Name))
+		{
+			OutError = FString::Printf(TEXT("[WidgetBuilder] animations[%d]: missing required 'name' field"), i);
+			return false;
+		}
+
+		// Required: target
+		if (!AnimObj->TryGetStringField(TEXT("target"), AnimSpec.Target))
+		{
+			OutError = FString::Printf(TEXT("[WidgetBuilder] animations[%d]: missing required 'target' field"), i);
+			return false;
+		}
+
+		// Required: duration
+		double DurationVal;
+		if (!AnimObj->TryGetNumberField(TEXT("duration"), DurationVal))
+		{
+			OutError = FString::Printf(TEXT("[WidgetBuilder] animations[%d]: missing required 'duration' field"), i);
+			return false;
+		}
+		AnimSpec.Duration = static_cast<float>(DurationVal);
+
+		// Required: tracks
+		const TArray<TSharedPtr<FJsonValue>>* TracksArray = nullptr;
+		if (!AnimObj->TryGetArrayField(TEXT("tracks"), TracksArray))
+		{
+			OutError = FString::Printf(TEXT("[WidgetBuilder] Animation '%s': missing required 'tracks' field"), *AnimSpec.Name);
+			return false;
+		}
+
+		for (int32 t = 0; t < TracksArray->Num(); ++t)
+		{
+			const TSharedPtr<FJsonObject>& TrackObj = (*TracksArray)[t]->AsObject();
+			if (!TrackObj.IsValid())
+			{
+				OutError = FString::Printf(TEXT("[WidgetBuilder] Animation '%s'.tracks[%d]: not a valid object"), *AnimSpec.Name, t);
+				return false;
+			}
+
+			FWidgetAnimationTrackSpec TrackSpec;
+
+			// Required: type
+			if (!TrackObj->TryGetStringField(TEXT("type"), TrackSpec.Type))
+			{
+				OutError = FString::Printf(TEXT("[WidgetBuilder] Animation '%s'.tracks[%d]: missing required 'type' field"), *AnimSpec.Name, t);
+				return false;
+			}
+
+			// Parse track data based on type
+			if (TrackSpec.Type == TEXT("opacity"))
+			{
+				// Check for unknown keys
+				for (const auto& Pair : TrackObj->Values)
+				{
+					if (!ValidOpacityTrackKeys.Contains(Pair.Key))
+					{
+						OutError = FString::Printf(TEXT("[WidgetBuilder] Animation '%s'.tracks[%d]: unknown key '%s'"), *AnimSpec.Name, t, *Pair.Key);
+						return false;
+					}
+				}
+
+				// Required: from
+				double FromVal;
+				if (!TrackObj->TryGetNumberField(TEXT("from"), FromVal))
+				{
+					OutError = FString::Printf(TEXT("[WidgetBuilder] Animation '%s'.tracks[%d]: opacity track missing 'from'"), *AnimSpec.Name, t);
+					return false;
+				}
+				TrackSpec.FromOpacity = static_cast<float>(FromVal);
+
+				// Required: to
+				double ToVal;
+				if (!TrackObj->TryGetNumberField(TEXT("to"), ToVal))
+				{
+					OutError = FString::Printf(TEXT("[WidgetBuilder] Animation '%s'.tracks[%d]: opacity track missing 'to'"), *AnimSpec.Name, t);
+					return false;
+				}
+				TrackSpec.ToOpacity = static_cast<float>(ToVal);
+
+				TrackSpec.bHasOpacityData = true;
+			}
+			// Unknown track types pass through to validator (which rejects them)
+
+			AnimSpec.Tracks.Add(MoveTemp(TrackSpec));
+		}
+
+		OutAnimations.Add(MoveTemp(AnimSpec));
+	}
+
 	return true;
 }
