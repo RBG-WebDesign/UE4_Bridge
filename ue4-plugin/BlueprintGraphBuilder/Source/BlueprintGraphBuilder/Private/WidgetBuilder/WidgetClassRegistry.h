@@ -32,5 +32,5 @@ private:
 	void RegisterContent(const FString& TypeName, TSubclassOf<UWidget> WidgetClass,
 		TArray<FWidgetPropertyDescriptor> TypeSpecificProps = {});
 	void RegisterLeaf(const FString& TypeName, TSubclassOf<UWidget> WidgetClass,
-		TArray<FWidgetPropertyDescriptor> TypeSpecificProps);
+		TArray<FWidgetPropertyDescriptor> TypeSpecificProps = {});
 };
