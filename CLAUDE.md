@@ -22,7 +22,9 @@ Run a single test file directly:
 npx tsx mcp-server/tests/actor-tools.test.ts
 ```
 
-No linter is configured. No external test runner (no jest/mocha) -- tests use `tsx` to run TypeScript directly with a custom assert pattern. Unit tests use a mock HTTP server (`mcp-server/tests/mock-server.ts`) so they don't need UE4 running. Integration tests hit the real UE4 listener.
+No linter is configured. No external test runner (no jest/mocha) -- tests use `tsx` to run TypeScript directly with a custom assert pattern. Unit tests live in `mcp-server/tests/` and use a mock HTTP server (`mock-server.ts`) that simulates UE4 responses -- no UE4 needed. Integration tests live in `mcp-server/tests/integration/` and hit the real UE4 listener.
+
+`npm test` chains three unit test files in sequence: `actor-tools.test.ts`, `level-viewport-tools.test.ts`, `material-blueprint-tools.test.ts`. If one fails, later files do not run.
 
 The MCP server entry point is `mcp-server/dist/index.js` (ESM). Claude Code discovers it via `.mcp.json`. The workspace root `package.json` delegates all scripts to the `mcp-server` workspace.
 
@@ -33,7 +35,10 @@ The MCP server entry point is `mcp-server/dist/index.js` (ESM). Claude Code disc
 ## Architecture
 
 ```
-Claude Code --stdio--> MCP Server (TypeScript) --HTTP:8080--> Python Listener (inside UE4) --> unreal module
+Claude Code --stdio--> MCP Server (TypeScript) --HTTP POST /:8080--> Python Listener (inside UE4) --> unreal module
+                                                                                                   --> BlueprintGraphBuilder (C++ plugin, via Python bindings)
+
+ShaderWeave (web app, future) --HTTP /shaderweave/v1/*:8080--> Python Listener (same) --> material custom expression ops
 ```
 
 ### MCP Server (`mcp-server/src/`)
@@ -68,12 +73,26 @@ The listener always responds with:
 ```
 The `UnrealClient.sendCommand()` in `unreal-client.ts` is the only code that makes these HTTP calls. Connection errors and timeouts resolve (not reject) with `{success: false}`.
 
+### BlueprintGraphBuilder C++ Plugin (`ue4-plugin/BlueprintGraphBuilder/`)
+A UE4.27 editor plugin (C++) that builds Blueprint event graphs and Widget Blueprints from JSON. Compiled inside a UE4 project (copied to `YourProject/Plugins/`), not by `npm run build`. Contains two subsystems:
+
+**Blueprint Graph Builder** (11 passes complete) -- builds event graphs from JSON. Exposes `UBlueprintGraphBuilderLibrary::BuildBlueprintFromJSON` to Python. The Python handler for `blueprint_build_from_json` calls this.
+
+**Widget Blueprint Builder** (design spec complete, implementation not started) -- builds UMG Widget Blueprints from JSON. Lives under `Private/WidgetBuilder/` subdirectory. Exposes `UWidgetBlueprintBuilderLibrary` with `BuildWidgetFromJSON`, `RebuildWidgetFromJSON`, `ValidateWidgetJSON`. Spec: `docs/superpowers/specs/2026-03-18-widget-blueprint-builder-design.md`.
+
+### ShaderWeave Bridge (`unreal-plugin/Content/Python/mcp_bridge/shaderweave/`)
+A separate product that shares the UE_Bridge HTTP listener. Pushes HLSL into Material Custom Expression nodes and returns compile feedback. Uses its own URL namespace (`/shaderweave/v1/*`) separate from the existing `POST /` command router. ShaderWeave is its own repo/product -- UE_Bridge only hosts the transport and UE4 execution layer. Spec: `docs/superpowers/specs/2026-03-18-shaderweave-bridge-mvp-design.md`.
+
+### Pattern System (`mcp-server/src/patterns/`)
+The `blueprint_build_from_description` tool uses a pattern registry to translate natural language into blueprint graph fragments. Patterns are registered via `registerPattern()` in the registry and merged with auto-wiring logic. Available patterns include `on_begin_play`, `print_string`, `print_float`, `get_actor_location`, `loop_print`, `move_actor_up`. To add a new pattern, create it in the patterns directory and register it in the registry.
+
 ### Adding a New Tool
 1. Prototype using `python_proxy` first
 2. Add a Python handler in `unreal-plugin/Content/Python/mcp_bridge/handlers/`
-3. Register the command in `router.py`
+3. Register the command in `router.py`'s `COMMAND_ROUTES` dict (maps command string to handler function)
 4. Add the TypeScript tool definition in the matching `mcp-server/src/tools/` file
-5. Wrap editor mutations in a UE4 transaction (see `utils/transactions.py`)
+5. If the tool modifies editor state, add it to the `modifyingCommands` set in `index.ts`
+6. Wrap editor mutations in a UE4 transaction using the `@transactional` decorator from `utils/transactions.py`
 
 ## Architecture Rules
 - The MCP server never imports or references Unreal modules. It only sends HTTP.
@@ -100,8 +119,20 @@ loop is the default behavior, not an optional extra.
 - No academic filler language (delve, explore, leverage, robust, utilize)
 - Write documentation like you're explaining to a programmer, not selling to a VP
 
+## Active Workstreams
+Multiple agents may work on this repo concurrently. Each workstream has its own spec and plan docs.
+
+| Workstream | Location | Status | Spec |
+|---|---|---|---|
+| Blueprint Graph Builder | `ue4-plugin/BlueprintGraphBuilder/` | 11 passes complete | `docs/superpowers/specs/2026-03-17-blueprint-graph-builder-design.md` |
+| Widget Blueprint Builder | `ue4-plugin/BlueprintGraphBuilder/Private/WidgetBuilder/` | Design complete, Pass 1 planned | `docs/superpowers/specs/2026-03-18-widget-blueprint-builder-design.md` |
+| ShaderWeave Bridge | `unreal-plugin/Content/Python/mcp_bridge/shaderweave/` | Design complete | `docs/superpowers/specs/2026-03-18-shaderweave-bridge-mvp-design.md` |
+
+ShaderWeave is a separate product that shares the UE_Bridge listener. It uses `/shaderweave/v1/*` URL paths, not the `POST /` command router. Do not mix ShaderWeave handlers into `handlers/` or ShaderWeave routes into `router.py`. Note: `listener.py` requires minimal path-routing changes for ShaderWeave (see ShaderWeave spec for details).
+
 ## File Ownership
 - `mcp-server/` is TypeScript only
 - `unreal-plugin/` is Python only
+- `ue4-plugin/` is C++ only (UE4 plugin, compiled by Unreal Build Tool, not npm)
 - `docs/` is Markdown only
 - These boundaries are hard. No cross-contamination.

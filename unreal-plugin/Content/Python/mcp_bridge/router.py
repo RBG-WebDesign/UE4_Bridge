@@ -52,6 +52,13 @@ from mcp_bridge.handlers.blueprints import (
     handle_blueprint_info,
     handle_blueprint_compile,
     handle_blueprint_document,
+    handle_blueprint_build_from_json,
+    handle_widget_build_from_json,
+)
+from mcp_bridge.handlers.promptbrush import (
+    handle_prompt_generate,
+    handle_prompt_status,
+    handle_prompt_spec_list,
 )
 
 
@@ -106,6 +113,13 @@ COMMAND_ROUTES: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "blueprint_info": handle_blueprint_info,
     "blueprint_compile": handle_blueprint_compile,
     "blueprint_document": handle_blueprint_document,
+    "blueprint_build_from_json": handle_blueprint_build_from_json,
+    "widget_build_from_json": handle_widget_build_from_json,
+
+    # PromptBrush
+    "prompt_generate": handle_prompt_generate,
+    "prompt_status": handle_prompt_status,
+    "prompt_spec_list": handle_prompt_spec_list,
 
     # Transaction support (called from MCP server for undo/redo)
     "begin_transaction": lambda params: _handle_transaction("begin", params),

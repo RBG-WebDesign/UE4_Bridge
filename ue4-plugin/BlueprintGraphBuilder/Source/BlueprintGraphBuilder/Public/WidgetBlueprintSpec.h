@@ -1,8 +1,15 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Serialization/JsonTypes.h"
 #include "Dom/JsonValue.h"
 #include "Layout/Margin.h"
+#include "Math/Vector2D.h"
+#include "Containers/UnrealString.h"
+#include "Containers/Array.h"
+#include "Containers/Map.h"
+#include "Templates/SharedPointer.h"
+
 
 enum class EWidgetCategory : uint8
 {
@@ -14,7 +21,11 @@ enum class EWidgetCategory : uint8
 struct FWidgetPropertyDescriptor
 {
 	FString Name;
-	EJson::Type ExpectedType; // EJson::String, EJson::Number, EJson::Boolean, EJson::Object
+	EJson ExpectedType; // EJson::String, EJson::Number, EJson::Boolean, EJson::Object
+
+	FWidgetPropertyDescriptor() : ExpectedType(EJson::None) {}
+	FWidgetPropertyDescriptor(const FString& InName, EJson InType)
+		: Name(InName), ExpectedType(InType) {}
 };
 
 struct FWidgetSlotSpec
@@ -32,23 +43,6 @@ struct FWidgetSlotSpec
 	bool bHasPadding = false;
 	bool bHasZOrder = false;
 	bool bHasAutoSize = false;
-
-	// Grid-specific slot fields (only meaningful for GridPanel children)
-	int32 Row = 0;
-	int32 Column = 0;
-	int32 RowSpan = 1;
-	int32 ColumnSpan = 1;
-	bool bHasRow = false;
-	bool bHasColumn = false;
-	bool bHasRowSpan = false;
-	bool bHasColumnSpan = false;
-
-	// Explicit enum-style alignment fields for Grid/ScrollBox/WrapBox slots.
-	// Separate from the existing Alignment FVector2D (Canvas/Box/Overlay only).
-	FString HorizontalAlignment;
-	FString VerticalAlignment;
-	bool bHasHorizontalAlignment = false;
-	bool bHasVerticalAlignment = false;
 };
 
 struct FWidgetNodeSpec

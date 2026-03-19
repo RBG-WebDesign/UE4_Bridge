@@ -25,6 +25,7 @@ import { createViewportTools } from "./tools/viewport.js";
 import { createMaterialTools } from "./tools/materials.js";
 import { createBlueprintTools } from "./tools/blueprints.js";
 import { createOperationsTools } from "./tools/operations.js";
+import { createPromptBrushTools } from "./tools/promptbrush.js";
 import type { ToolDefinition } from "./types.js";
 
 async function main(): Promise<void> {
@@ -46,6 +47,7 @@ async function main(): Promise<void> {
     ...createMaterialTools(client),
     ...createBlueprintTools(client),
     ...createOperationsTools(client, history),
+    ...createPromptBrushTools(client),
   ];
 
   // Build a lookup map
@@ -60,6 +62,8 @@ async function main(): Promise<void> {
     "actor_organize", "actor_snap_to_socket", "batch_spawn",
     "material_create", "material_apply",
     "blueprint_create", "blueprint_compile", "blueprint_build_from_json", "blueprint_build_from_description",
+    "widget_build_from_json",
+    "prompt_generate",
     "level_save",
   ]);
 

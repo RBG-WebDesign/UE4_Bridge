@@ -678,3 +678,91 @@ def handle_blueprint_document(params: Dict[str, Any]) -> Dict[str, Any]:
         }
     except Exception as e:
         return {"success": False, "data": {}, "error": str(e)}
+
+
+def handle_blueprint_build_from_json(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Build a Blueprint event graph from JSON using BlueprintGraphBuilderLibrary.
+
+    Args:
+        params:
+            - blueprint_path (str): Asset path of the Blueprint to populate.
+            - graph_json (dict): Graph specification for BlueprintGraphBuilderLibrary.
+    """
+    try:
+        import unreal
+        import json as json_mod
+
+        bp_path = params.get("blueprint_path", "")
+        graph_json = params.get("graph_json", {})
+
+        if not bp_path:
+            return {"success": False, "data": {}, "error": "Missing 'blueprint_path'"}
+
+        bp = unreal.EditorAssetLibrary.load_asset(bp_path)
+        if bp is None:
+            return {"success": False, "data": {}, "error": f"Blueprint not found: {bp_path}"}
+        if not isinstance(bp, unreal.Blueprint):
+            return {"success": False, "data": {}, "error": f"Asset is not a Blueprint: {bp_path}"}
+
+        lib = getattr(unreal, "BlueprintGraphBuilderLibrary", None)
+        if lib is None:
+            return {"success": False, "data": {}, "error": "BlueprintGraphBuilderLibrary not available"}
+
+        json_str = json_mod.dumps(graph_json)
+        err_out = ""
+        ok = lib.build_blueprint_from_json(bp, json_str, err_out)
+
+        if ok:
+            try:
+                unreal.KismetSystemLibrary.compile_blueprint(bp)
+                unreal.EditorAssetLibrary.save_asset(bp_path)
+            except Exception:
+                pass
+
+        return {
+            "success": ok,
+            "data": {"path": bp_path},
+            "error": str(err_out) if not ok else None,
+        }
+    except Exception as e:
+        return {"success": False, "data": {}, "error": str(e)}
+
+
+def handle_widget_build_from_json(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a Widget Blueprint from JSON using WidgetBlueprintBuilderLibrary.
+
+    Args:
+        params:
+            - package_path (str): Content directory path e.g. /Game/UI
+            - asset_name (str): Widget Blueprint asset name e.g. WBP_MyWidget
+            - widget_json (dict): Widget tree specification matching WidgetBlueprintBuilderLibrary schema
+    """
+    try:
+        import unreal
+        import json as json_mod
+
+        package_path = params.get("package_path", "")
+        asset_name = params.get("asset_name", "")
+        widget_json = params.get("widget_json", {})
+
+        if not package_path or not asset_name:
+            return {"success": False, "data": {}, "error": "Missing 'package_path' or 'asset_name'"}
+
+        lib = getattr(unreal, "WidgetBlueprintBuilderLibrary", None)
+        if lib is None:
+            return {"success": False, "data": {}, "error": "WidgetBlueprintBuilderLibrary not available"}
+
+        unreal.EditorAssetLibrary.make_directory(package_path)
+
+        json_str = json_mod.dumps({"root": widget_json})
+        err_out = ""
+        ok = lib.build_widget_from_json(package_path, asset_name, json_str, err_out)
+
+        full_path = f"{package_path}/{asset_name}"
+        return {
+            "success": ok,
+            "data": {"path": full_path},
+            "error": str(err_out) if not ok else None,
+        }
+    except Exception as e:
+        return {"success": False, "data": {}, "error": str(e)}

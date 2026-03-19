@@ -30,4 +30,10 @@ private:
 		const FString& Path,
 		FString& OutError
 	);
+
+	static bool ParseAnimations(
+		const TArray<TSharedPtr<FJsonValue>>* AnimArray,
+		TArray<FWidgetAnimationSpec>& OutAnimations,
+		FString& OutError
+	);
 };
