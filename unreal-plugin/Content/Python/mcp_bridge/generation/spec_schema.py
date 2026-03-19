@@ -308,9 +308,9 @@ class PIETestSpec:
 class AssertionResult:
     """Result of evaluating one PIETestSpec."""
     predicate: str
-    target: Optional[str]
     passed: bool
     observed: str                # human-readable observed value
+    target: Optional[str] = None  # class name, widget name, log string, or actor name
     raw: str = ""                # original shorthand test string (for debugging)
 
 
