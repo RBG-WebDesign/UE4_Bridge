@@ -107,7 +107,7 @@ UE4.27 exposes `MinValue` and `MaxValue` as direct UPROPERTY fields on `USlider`
 | stepSize | number | reject if <= 0 | SetStepSize |
 | orientation | string | reject unknown values | SetOrientation |
 
-Validation rule for `value`: if both `minValue` and `maxValue` are present, `value` must be within `[minValue, maxValue]`. If neither bound is specified, `value` is validated against [0.0, 1.0] (UE4 default range). If only one bound is specified, that bound is used and the other defaults to UE4 behavior.
+Validation rule for `value`: if both `minValue` and `maxValue` are present, `value` must be within `[minValue, maxValue]`. If neither bound is specified, `value` is validated against [0.0, 1.0] (UE4 default range). If only one bound is specified, the missing bound defaults to UE4.27 defaults (min=0.0, max=1.0) for validation purposes. This keeps validation deterministic regardless of engine version.
 
 Valid `orientation` values: `Horizontal`, `Vertical`.
 
@@ -216,7 +216,7 @@ static const TSet<FString> ValidSlotKeys = {
 };
 ```
 
-`horizontalAlignment` and `verticalAlignment` are valid JSON keys for any widget's slot. The parser accepts them globally. The slot property applier only acts on them for slot types that support them (GridSlot, ScrollBoxSlot). For other slot types (e.g., WrapBoxSlot), `bHasHorizontalAlignment` is populated but the applier ignores it -- WrapBox slot horizontal alignment is not supported in v1 scope. This is intentional and not an error.
+`horizontalAlignment` and `verticalAlignment` are valid JSON keys for any widget's slot. The parser accepts them globally. The slot property applier only acts on them for slot types that support them (GridSlot, ScrollBoxSlot). For WrapBoxSlot, `bHasHorizontalAlignment` and `bHasVerticalAlignment` are populated from JSON but are silently ignored during application -- WrapBox slot alignment fields are not supported in v1 scope. This is intentional, not an error, and must not produce a warning at build time.
 
 ### JSON slot examples for new panel types
 
@@ -289,6 +289,8 @@ Alignment string to enum conversion (shared helper, used by all three new slot t
 
 Unknown strings: log error and return false. No silent default.
 
+**Enum parsing rule:** All enum string parsing must go through centralized helper functions in `WidgetSlotPropertyApplier.cpp` (for slot alignment) and `WidgetPropertyApplier.cpp` (for widget-level enums like barFillType, orientation, stretch, visibility, justification). No ad-hoc per-widget string comparisons. This prevents case drift (`"center"` vs `"Center"`), duplicated logic, and inconsistent error messages. Centralized helpers validate the string and convert to the target enum type, returning false on unknown values.
+
 ## Registry Helper Methods
 
 Introduce three private helpers in `FWidgetClassRegistry` to replace the per-type boilerplate in `RegisterTypes()`. These are internal only -- not exposed in the header's public interface.
@@ -359,6 +361,8 @@ RegisterLeaf(TEXT("RichTextBlock"), URichTextBlock::StaticClass(),
 - **Condition 2 (animation target):** The widget name is in the animation target set
 
 All other widgets keep their engine default (`bIsVariable = false`).
+
+`bIsVariable` must be set before any Blueprint compilation or animation binding occurs. This ensures the widget is registered in the Blueprint variable list and available to animation bindings and external graph references. Setting it after compilation or finalization has no effect.
 
 **Animation target set construction:** Before `BuildTree` is called, the orchestrator (`FWidgetBlueprintBuilder`) builds a `TSet<FString>` by iterating `Spec.Animations` and adding each `AnimSpec.Target` to the set. It passes this set into `BuildTree`. `BuildTree` passes it down through `BuildNode` recursion.
 
@@ -557,6 +561,14 @@ Success: asset builds, ReconnectMeter appears as a variable in the Widget Bluepr
 
 Expected: `[WidgetBuilder] VolumeSlider: 'value' 2.0 is outside [minValue=0.0, maxValue=1.0]`
 
+### Slider partial bounds (pass)
+
+```json
+{ "type": "Slider", "name": "MusicSlider", "properties": { "value": 0.8, "minValue": 0.5 } }
+```
+
+Expected: passes validation. `value` 0.8 is within [minValue=0.5, maxValue=1.0 (default)]. Asset builds cleanly.
+
 ### Unknown widget type (fail)
 
 ```json
@@ -577,7 +589,7 @@ Add an animation targeting `PromptText` and rebuild. `PromptText` now appears in
 
 ### Risk 1: UGridPanel column initialization (MEDIUM)
 
-`UGridPanel` may require explicit column fill coefficients before children render at the correct column. If children all appear in column 0 regardless of slot values, add a post-build pass: after the tree is constructed, find all `UGridPanel` widgets, determine the maximum column index used by their children, and call `GridPanel->AddColumnFillCoefficient(1.0f)` for each column index 0..maxColumn.
+`UGridPanel` requires explicit column fill coefficients before children render at the correct column. Do not wait for failure -- always initialize them. After all children of a GridPanel are attached, determine the maximum column index across all children's slot specs and call `GridPanel->AddColumnFillCoefficient(1.0f)` for each column index 0..maxColumn. This must happen in `FWidgetTreeBuilder` after the child recursion for a GridPanel node completes, before returning up the call stack.
 
 ### Risk 2: UScrollBoxSlot vertical alignment (MEDIUM)
 
@@ -594,6 +606,10 @@ If no DataTable is assigned to `TextStyleSet`, markup is stripped at runtime. Ex
 ### Risk 5: UScaleBox attachment (LOW)
 
 `UScaleBox` extends `UContentWidget`. The existing Pass 4 `AddChild` path handles it. Verify at compile time.
+
+### Logging rule
+
+All non-fatal behavior deviations (e.g., ScrollBoxSlot vertical alignment not supported, RichTextBlock no style table) must log exactly once per widget instance using the `[WidgetBuilder]` prefix. Do not log on every frame or every property application -- once at build time per widget. This prevents log spam and keeps build output readable.
 
 ### Risk 6: bIsVariable field accessibility (LOW)
 
