@@ -8,7 +8,7 @@ All unreal.* calls must be on the game thread.
 """
 from __future__ import annotations
 import time
-from typing import Any, List, Optional
+from typing import List, Optional
 
 from mcp_bridge.generation.spec_schema import PIETestSpec, AssertionResult, TelemetryFrame
 from mcp_bridge.generation import telemetry_capture as tc
@@ -26,12 +26,12 @@ def launch_pie(level_path: Optional[str] = None) -> bool:
     """
     try:
         import unreal
-        tc.reset_log_cursor()
         if level_path:
             unreal.EditorLevelLibrary.load_level(level_path)
         subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
         if subsystem is None:
             return False
+        tc.reset_log_cursor()
         subsystem.play_in_editor(in_editor=False)
         return True
     except Exception:
