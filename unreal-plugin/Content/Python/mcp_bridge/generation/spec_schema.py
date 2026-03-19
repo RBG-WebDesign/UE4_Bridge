@@ -268,3 +268,69 @@ def spec_to_dict(spec: BuildSpec) -> Dict[str, Any]:
         return obj
 
     return _convert(spec)
+
+
+# ---------------------------------------------------------------------------
+# PIE Harness / Telemetry
+# ---------------------------------------------------------------------------
+
+@dataclass
+class PIETestSpec:
+    """A single acceptance test predicate for a PIE session."""
+    predicate: str               # "pawn_possessed" | "widget_visible" | "log_contains"
+                                 # | "ai_state" | "survive"
+    target: Optional[str] = None     # class name, widget name, log string, or actor name
+    expected: Optional[str] = None   # expected state value (for ai_state predicate)
+    timeout_seconds: float = 5.0
+
+    @staticmethod
+    def from_string(s: str) -> "PIETestSpec":
+        """Parse shorthand string into PIETestSpec.
+
+        Examples:
+            "pawn_possessed:BP_Character"  -> PIETestSpec("pawn_possessed", "BP_Character")
+            "widget_visible:WBP_HUD"       -> PIETestSpec("widget_visible", "WBP_HUD")
+            "log_contains:GameStarted"     -> PIETestSpec("log_contains", "GameStarted")
+            "ai_state:BP_Enemy:Patrol"     -> PIETestSpec("ai_state", "BP_Enemy", "Patrol")
+            "survive:5"                    -> PIETestSpec("survive", timeout_seconds=5.0)
+        """
+        parts = s.split(":", 2)
+        predicate = parts[0]
+        if predicate == "survive":
+            timeout = float(parts[1]) if len(parts) > 1 else 5.0
+            return PIETestSpec(predicate=predicate, timeout_seconds=timeout)
+        target = parts[1] if len(parts) > 1 else None
+        expected = parts[2] if len(parts) > 2 else None
+        return PIETestSpec(predicate=predicate, target=target, expected=expected)
+
+
+@dataclass
+class AssertionResult:
+    """Result of evaluating one PIETestSpec."""
+    predicate: str
+    target: Optional[str]
+    passed: bool
+    observed: str                # human-readable observed value
+    raw: str = ""                # original shorthand test string (for debugging)
+
+
+@dataclass
+class TelemetryFrame:
+    """Runtime state captured from one PIE snapshot."""
+    log_lines_since_last: List[str]       # new log lines since last snapshot
+    possessed_pawn_class: Optional[str]   # class name of possessed pawn, or None
+    ai_controller_states: Dict[str, str]  # actor name -> state string
+    visible_widgets: List[str]            # widget class names currently visible
+    fps: float
+    pie_world_name: Optional[str] = None  # world name, useful when multiple PIE worlds exist
+
+
+@dataclass
+class ClassResolutionCache:
+    """Maps asset short names to resolved content paths.
+
+    Built during generation and reused by pie_harness, repair_engine,
+    and reference_validator. Avoids repeated load_object calls during PIE.
+    """
+    class_paths: Dict[str, str] = field(default_factory=dict)
+    # e.g. {"BP_Character": "/Game/Generated/Gameplay/BP_Character"}
