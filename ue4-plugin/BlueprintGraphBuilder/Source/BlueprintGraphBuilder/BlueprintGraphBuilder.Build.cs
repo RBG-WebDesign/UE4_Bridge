@@ -35,6 +35,7 @@ public class BlueprintGraphBuilder : ModuleRules
         if (Target.bBuildEditor)
         {
             PrivateDependencyModuleNames.Add("BehaviorTreeEditor");
+            PrivateDependencyModuleNames.Add("AIGraph");
         }
     }
 }

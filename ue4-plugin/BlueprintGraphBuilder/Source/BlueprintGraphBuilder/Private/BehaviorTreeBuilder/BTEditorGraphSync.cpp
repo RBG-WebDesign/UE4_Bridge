@@ -6,29 +6,64 @@
 #include "BehaviorTree/BTCompositeNode.h"
 #include "BehaviorTree/BTTaskNode.h"
 #include "BehaviorTree/BTDecorator.h"
+#include "AIGraphNode.h"
 #include "BehaviorTreeGraphNode_Composite.h"
-#include "BehaviorTreeGraphNode_Task.h"
-#include "BehaviorTreeGraphNode_Decorator.h"
-#include "BehaviorTreeGraph.h"
-#include "EdGraphSchema_BehaviorTree.h"
 #include "EdGraph/EdGraph.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 
-static UBTGraphNode* CreateGraphNodeForRuntime(UBTNode* RuntimeNode, UBehaviorTreeGraph* BTGraph)
+// Most BehaviorTreeEditor classes are NOT DLL-exported in UE4.27.
+// UBehaviorTreeGraphNode_Composite IS exported. For everything else,
+// resolve UClass at runtime via FindObject to avoid linker errors.
+// We use UAIGraphNode* (exported from AIGraph) as the common base type.
+
+static UClass* GetBTGraphNodeClass_Task()
 {
-	UBTGraphNode* GraphNode = nullptr;
+	static UClass* Cls = FindObject<UClass>(ANY_PACKAGE, TEXT("BehaviorTreeGraphNode_Task"));
+	return Cls;
+}
+
+static UClass* GetBTGraphNodeClass_Decorator()
+{
+	static UClass* Cls = FindObject<UClass>(ANY_PACKAGE, TEXT("BehaviorTreeGraphNode_Decorator"));
+	return Cls;
+}
+
+static UClass* GetBTGraphClass()
+{
+	static UClass* Cls = FindObject<UClass>(ANY_PACKAGE, TEXT("BehaviorTreeGraph"));
+	return Cls;
+}
+
+static UClass* GetBTGraphSchemaClass()
+{
+	static UClass* Cls = FindObject<UClass>(ANY_PACKAGE, TEXT("EdGraphSchema_BehaviorTree"));
+	return Cls;
+}
+
+static UAIGraphNode* CreateGraphNodeForRuntime(UBTNode* RuntimeNode, UEdGraph* BTGraph)
+{
+	UAIGraphNode* GraphNode = nullptr;
 
 	if (Cast<UBTCompositeNode>(RuntimeNode))
 	{
-		GraphNode = NewObject<UBTGraphNode_Composite>(BTGraph);
+		// UBehaviorTreeGraphNode_Composite IS exported
+		GraphNode = NewObject<UBehaviorTreeGraphNode_Composite>(BTGraph);
 	}
 	else if (Cast<UBTTaskNode>(RuntimeNode))
 	{
-		GraphNode = NewObject<UBTGraphNode_Task>(BTGraph);
+		UClass* TaskNodeClass = GetBTGraphNodeClass_Task();
+		if (TaskNodeClass)
+		{
+			GraphNode = Cast<UAIGraphNode>(NewObject<UObject>(BTGraph, TaskNodeClass));
+		}
 	}
 	else if (Cast<UBTDecorator>(RuntimeNode))
 	{
-		GraphNode = NewObject<UBTGraphNode_Decorator>(BTGraph);
+		UClass* DecNodeClass = GetBTGraphNodeClass_Decorator();
+		if (DecNodeClass)
+		{
+			GraphNode = Cast<UAIGraphNode>(NewObject<UObject>(BTGraph, DecNodeClass));
+		}
 	}
 
 	if (GraphNode)
@@ -43,8 +78,8 @@ static UBTGraphNode* CreateGraphNodeForRuntime(UBTNode* RuntimeNode, UBehaviorTr
 
 static void SyncComposite(
 	UBTCompositeNode* Composite,
-	UBTGraphNode* ParentGraphNode,
-	UBehaviorTreeGraph* BTGraph)
+	UAIGraphNode* ParentGraphNode,
+	UEdGraph* BTGraph)
 {
 	if (!Composite || !ParentGraphNode) return;
 
@@ -56,7 +91,7 @@ static void SyncComposite(
 
 		if (!ChildNode) continue;
 
-		UBTGraphNode* ChildGraphNode = CreateGraphNodeForRuntime(ChildNode, BTGraph);
+		UAIGraphNode* ChildGraphNode = CreateGraphNodeForRuntime(ChildNode, BTGraph);
 		if (!ChildGraphNode) continue;
 
 		// Connect parent output pin to child input pin
@@ -90,7 +125,7 @@ static void SyncComposite(
 		for (UBTDecorator* Dec : Child.Decorators)
 		{
 			if (!Dec) continue;
-			UBTGraphNode* DecGraphNode = CreateGraphNodeForRuntime(Dec, BTGraph);
+			UAIGraphNode* DecGraphNode = CreateGraphNodeForRuntime(Dec, BTGraph);
 			if (DecGraphNode)
 			{
 				ChildGraphNode->AddSubNode(DecGraphNode, BTGraph);
@@ -113,18 +148,26 @@ void FBTEditorGraphSync::Sync(UBehaviorTree* BT)
 		return;
 	}
 
-	// Get or create editor graph
-	UBehaviorTreeGraph* BTGraph = Cast<UBehaviorTreeGraph>(BT->BTGraph);
+	// Get or create editor graph using runtime-resolved classes (not exported)
+	UEdGraph* BTGraph = BT->BTGraph;
 	if (!BTGraph)
 	{
-		BTGraph = CastChecked<UBehaviorTreeGraph>(
-			FBlueprintEditorUtils::CreateNewGraph(
+		UClass* GraphClass = GetBTGraphClass();
+		UClass* SchemaClass = GetBTGraphSchemaClass();
+		if (GraphClass && SchemaClass)
+		{
+			BTGraph = FBlueprintEditorUtils::CreateNewGraph(
 				BT, TEXT("BehaviorTreeGraph"),
-				UBehaviorTreeGraph::StaticClass(),
-				UEdGraphSchema_BehaviorTree::StaticClass()
-			)
-		);
-		BT->BTGraph = BTGraph;
+				GraphClass,
+				SchemaClass
+			);
+			BT->BTGraph = BTGraph;
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[BTEditorGraphSync] could not resolve BehaviorTreeGraph/Schema classes"));
+			return;
+		}
 	}
 
 	// Clear existing graph nodes safely
@@ -138,7 +181,7 @@ void FBTEditorGraphSync::Sync(UBehaviorTree* BT)
 	}
 
 	// Create root graph node
-	UBTGraphNode* RootGraphNode = CreateGraphNodeForRuntime(BT->RootNode, BTGraph);
+	UAIGraphNode* RootGraphNode = CreateGraphNodeForRuntime(BT->RootNode, BTGraph);
 	if (!RootGraphNode)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BTEditorGraphSync] failed to create root graph node"));
@@ -148,8 +191,12 @@ void FBTEditorGraphSync::Sync(UBehaviorTree* BT)
 	// Recursively sync the tree
 	SyncComposite(BT->RootNode, RootGraphNode, BTGraph);
 
-	// Finalize
-	BTGraph->UpdateAsset();
+	// Finalize: call UpdateAsset if available (UBehaviorTreeGraph may override it)
+	UFunction* UpdateFunc = BTGraph->FindFunction(TEXT("UpdateAsset"));
+	if (UpdateFunc)
+	{
+		BTGraph->ProcessEvent(UpdateFunc, nullptr);
+	}
 	BT->MarkPackageDirty();
 
 	UE_LOG(LogTemp, Log, TEXT("[BTEditorGraphSync] synced editor graph for '%s'"), *BT->GetName());

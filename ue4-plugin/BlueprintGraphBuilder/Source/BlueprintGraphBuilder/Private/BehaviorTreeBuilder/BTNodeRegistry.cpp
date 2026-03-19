@@ -1,4 +1,5 @@
 #include "BTNodeRegistry.h"
+#include "BehaviorTree/BehaviorTreeTypes.h"
 #include "BehaviorTree/BTCompositeNode.h"
 #include "BehaviorTree/BTTaskNode.h"
 #include "BehaviorTree/BTDecorator.h"
@@ -101,6 +102,14 @@ const TMap<FString, TSet<FString>>* FBTNodeRegistry::GetBBKeyRequirements(const 
 	return BBKeyTypeRequirements.Find(Type);
 }
 
+// Helper: get FBlackboardKeySelector* from a UBTNode via reflection (BlackboardKey is protected)
+static FBlackboardKeySelector* GetBlackboardKeySelector(UBTNode* Node)
+{
+	FProperty* Prop = Node->GetClass()->FindPropertyByName(TEXT("BlackboardKey"));
+	if (!Prop) return nullptr;
+	return Prop->ContainerPtrToValuePtr<FBlackboardKeySelector>(Node);
+}
+
 void FBTNodeRegistry::ApplyParams(
 	UBTNode* Node,
 	const FString& Type,
@@ -128,10 +137,14 @@ void FBTNodeRegistry::ApplyParams(
 
 		if (const FString* KeyName = Merged.Find(TEXT("blackboard_key")))
 		{
-			MoveToNode->BlackboardKey.SelectedKeyName = FName(**KeyName);
-			if (Blackboard)
+			FBlackboardKeySelector* BBKey = GetBlackboardKeySelector(Node);
+			if (BBKey)
 			{
-				MoveToNode->BlackboardKey.ResolveSelectedKey(*Blackboard);
+				BBKey->SelectedKeyName = FName(**KeyName);
+				if (Blackboard)
+				{
+					BBKey->ResolveSelectedKey(*Blackboard);
+				}
 			}
 		}
 		if (const FString* Radius = Merged.Find(TEXT("acceptable_radius")))
@@ -160,21 +173,34 @@ void FBTNodeRegistry::ApplyParams(
 
 		if (const FString* KeyName = Merged.Find(TEXT("blackboard_key")))
 		{
-			BBDec->BlackboardKey.SelectedKeyName = FName(**KeyName);
-			if (Blackboard)
+			FBlackboardKeySelector* BBKey = GetBlackboardKeySelector(Node);
+			if (BBKey)
 			{
-				BBDec->BlackboardKey.ResolveSelectedKey(*Blackboard);
+				BBKey->SelectedKeyName = FName(**KeyName);
+				if (Blackboard)
+				{
+					BBKey->ResolveSelectedKey(*Blackboard);
+				}
 			}
 		}
 		if (const FString* Condition = Merged.Find(TEXT("condition")))
 		{
-			if (*Condition == TEXT("IsSet"))
+			// BasicOperation is protected WITH_EDITORONLY_DATA, use reflection
+			FProperty* OpProp = Node->GetClass()->FindPropertyByName(TEXT("BasicOperation"));
+			if (OpProp)
 			{
-				BBDec->BasicOperation = EBasicKeyOperation::Set;
-			}
-			else if (*Condition == TEXT("IsNotSet"))
-			{
-				BBDec->BasicOperation = EBasicKeyOperation::NotSet;
+				uint8* OpPtr = OpProp->ContainerPtrToValuePtr<uint8>(Node);
+				if (OpPtr)
+				{
+					if (*Condition == TEXT("IsSet"))
+					{
+						*OpPtr = static_cast<uint8>(EBasicKeyOperation::Set);
+					}
+					else if (*Condition == TEXT("IsNotSet"))
+					{
+						*OpPtr = static_cast<uint8>(EBasicKeyOperation::NotSet);
+					}
+				}
 			}
 		}
 	}
