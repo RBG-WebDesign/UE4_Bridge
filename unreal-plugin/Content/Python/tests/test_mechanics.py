@@ -152,6 +152,71 @@ def test_enemy_patrol_adds_blackboard() -> None:
     _pass("enemy_patrol_adds_blackboard")
 
 
+def test_enemy_patrol_bt_root_has_id() -> None:
+    from mcp_bridge.generation.mechanics.enemy_patrol import apply_enemy_patrol
+    intent = _make_intent("enemies that patrol the level")
+    spec = apply_enemy_patrol(intent, _make_spec())
+    bt = spec.behavior_trees[0]
+    assert "id" in bt.root, f"expected 'id' in BT root, got keys: {list(bt.root.keys())}"
+    assert bt.root["id"], "BT root id must not be empty"
+    _pass("enemy_patrol_bt_root_has_id")
+
+
+def test_enemy_patrol_bt_root_has_decorators() -> None:
+    from mcp_bridge.generation.mechanics.enemy_patrol import apply_enemy_patrol
+    intent = _make_intent("enemies that patrol the level")
+    spec = apply_enemy_patrol(intent, _make_spec())
+    bt = spec.behavior_trees[0]
+    # At least one child should have decorators
+    has_decorators = any(
+        len(child.get("decorators", [])) > 0
+        for child in bt.root.get("children", [])
+    )
+    assert has_decorators, "expected at least one child with decorators in BT root"
+    _pass("enemy_patrol_bt_root_has_decorators")
+
+
+def test_enemy_patrol_bt_uses_correct_param_names() -> None:
+    from mcp_bridge.generation.mechanics.enemy_patrol import apply_enemy_patrol
+    intent = _make_intent("enemies that patrol the level")
+    spec = apply_enemy_patrol(intent, _make_spec())
+    bt = spec.behavior_trees[0]
+    # Walk tree to find a MoveTo node and check param names
+    def find_nodes(node, target_type):
+        found = []
+        if node.get("type") == target_type:
+            found.append(node)
+        for child in node.get("children", []):
+            found.extend(find_nodes(child, target_type))
+        return found
+
+    move_nodes = find_nodes(bt.root, "MoveTo")
+    assert len(move_nodes) > 0, "expected at least one MoveTo node"
+    for node in move_nodes:
+        params = node.get("params", {})
+        assert "blackboard_key" in params, f"MoveTo missing 'blackboard_key', got: {list(params.keys())}"
+    _pass("enemy_patrol_bt_uses_correct_param_names")
+
+
+def test_enemy_patrol_bt_all_nodes_have_unique_ids() -> None:
+    from mcp_bridge.generation.mechanics.enemy_patrol import apply_enemy_patrol
+    intent = _make_intent("enemies that patrol the level")
+    spec = apply_enemy_patrol(intent, _make_spec())
+    bt = spec.behavior_trees[0]
+    ids = set()
+    def collect_ids(node):
+        node_id = node.get("id", "")
+        assert node_id, f"node type '{node.get('type')}' has empty/missing id"
+        assert node_id not in ids, f"duplicate id: {node_id}"
+        ids.add(node_id)
+        for child in node.get("children", []):
+            collect_ids(child)
+        for dec in node.get("decorators", []):
+            collect_ids(dec)
+    collect_ids(bt.root)
+    _pass("enemy_patrol_bt_all_nodes_have_unique_ids")
+
+
 # ---------------------------------------------------------------------------
 # hide_from_enemy tests (will fail with ImportError until implemented)
 # ---------------------------------------------------------------------------
@@ -213,6 +278,10 @@ if __name__ == "__main__":
         test_enemy_patrol_adds_enemy_bp,
         test_enemy_patrol_adds_ai_controller,
         test_enemy_patrol_adds_blackboard,
+        test_enemy_patrol_bt_root_has_id,
+        test_enemy_patrol_bt_root_has_decorators,
+        test_enemy_patrol_bt_uses_correct_param_names,
+        test_enemy_patrol_bt_all_nodes_have_unique_ids,
         test_hide_adds_hiding_spot,
         test_main_menu_adds_widget,
         test_game_over_adds_widget,
