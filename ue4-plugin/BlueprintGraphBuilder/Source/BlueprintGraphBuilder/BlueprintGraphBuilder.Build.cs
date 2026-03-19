@@ -30,12 +30,15 @@ public class BlueprintGraphBuilder : ModuleRules
             "MovieSceneTracks",
             "AIModule",
             "GameplayTasks",
+            "AnimGraph",
+            "AnimGraphRuntime",
         });
 
         if (Target.bBuildEditor)
         {
             PrivateDependencyModuleNames.Add("BehaviorTreeEditor");
             PrivateDependencyModuleNames.Add("AIGraph");
+            PrivateDependencyModuleNames.Add("Persona");
         }
     }
 }
