@@ -4,6 +4,8 @@
 #include "ABPAssetFactory.h"
 #include "ABPJsonParser.h"
 #include "ABPValidator.h"
+#include "ABPVariableBuilder.h"
+#include "Kismet2/KismetEditorUtilities.h"
 
 FString FAnimBPBuilder::Build(
 	const FString& PackagePath,
@@ -40,7 +42,20 @@ FString FAnimBPBuilder::Build(
 		return Error;
 	}
 
-	// Steps 4-6 will be added by later tasks
+	// Step 4: VARIABLES
+	{
+		FString VarError = FAnimBPVariableBuilder::AddVariables(AnimBP, Spec.Variables);
+		if (!VarError.IsEmpty()) return VarError;
+	}
+
+	// Compile after variables so they are available for later steps
+	{
+		FKismetCompilerOptions CompileOptions;
+		FCompilerResultsLog Results;
+		FKismetEditorUtilities::CompileBlueprint(AnimBP, CompileOptions, &Results);
+	}
+
+	// Steps 5-6 will be added by later tasks
 
 	return FString();
 }
