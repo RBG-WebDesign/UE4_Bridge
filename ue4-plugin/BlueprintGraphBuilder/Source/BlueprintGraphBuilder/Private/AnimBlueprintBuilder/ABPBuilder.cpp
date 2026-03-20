@@ -132,6 +132,10 @@ FString FAnimBPBuilder::Rebuild(UAnimBlueprint* AnimBP, const FString& JsonStrin
 		FKismetCompilerOptions CompileOptions;
 		FCompilerResultsLog Results;
 		FKismetEditorUtilities::CompileBlueprint(AnimBP, CompileOptions, &Results);
+		if (Results.NumErrors > 0)
+		{
+			return FString::Printf(TEXT("[AnimBPBuilder] compile after variables failed with %d error(s)"), Results.NumErrors);
+		}
 	}
 
 	// Build context
