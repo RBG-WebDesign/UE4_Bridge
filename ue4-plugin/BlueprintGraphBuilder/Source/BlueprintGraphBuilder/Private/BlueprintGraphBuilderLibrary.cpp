@@ -11,6 +11,11 @@
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
+#include "Engine/SCS_Node.h"
+#include "Engine/SimpleConstructionScript.h"
+#include "Components/ActorComponent.h"
+#include "JsonObjectConverter.h"
+#include "UObject/TextProperty.h"
 
 void UBlueprintGraphBuilderLibrary::BuildBlueprintFromJSON(
     UBlueprint* Blueprint,
@@ -98,6 +103,34 @@ void UBlueprintGraphBuilderLibrary::BuildBlueprintFromJSON(
             Creator.Finalize();
             SpawnedNode = EventNode;
         }
+        else if (NodeType == TEXT("ActorBeginOverlap"))
+        {
+            FGraphNodeCreator<UK2Node_Event> Creator(*Graph);
+            UK2Node_Event* EventNode = Creator.CreateNode();
+            EventNode->EventReference.SetExternalMember(
+                FName(TEXT("ReceiveActorBeginOverlap")),
+                AActor::StaticClass()
+            );
+            EventNode->bOverrideFunction = true;
+            EventNode->NodePosX = 0;
+            EventNode->NodePosY = 200;
+            Creator.Finalize();
+            SpawnedNode = EventNode;
+        }
+        else if (NodeType == TEXT("ActorEndOverlap"))
+        {
+            FGraphNodeCreator<UK2Node_Event> Creator(*Graph);
+            UK2Node_Event* EventNode = Creator.CreateNode();
+            EventNode->EventReference.SetExternalMember(
+                FName(TEXT("ReceiveActorEndOverlap")),
+                AActor::StaticClass()
+            );
+            EventNode->bOverrideFunction = true;
+            EventNode->NodePosX = 0;
+            EventNode->NodePosY = 400;
+            Creator.Finalize();
+            SpawnedNode = EventNode;
+        }
         else if (NodeType == TEXT("PrintString"))
         {
             UFunction* Func = UKismetSystemLibrary::StaticClass()->FindFunctionByName(TEXT("PrintString"));
@@ -112,6 +145,96 @@ void UBlueprintGraphBuilderLibrary::BuildBlueprintFromJSON(
             CallNode->NodePosX = 300;
             CallNode->NodePosY = 0;
             Creator.Finalize();
+
+            // Apply params as pin defaults (e.g. InString)
+            const TSharedPtr<FJsonObject>* ParamsObj = nullptr;
+            if ((*NodeObj)->TryGetObjectField(TEXT("params"), ParamsObj))
+            {
+                for (auto& KV : (*ParamsObj)->Values)
+                {
+                    UEdGraphPin* Pin = CallNode->FindPin(FName(*KV.Key));
+                    if (Pin && KV.Value.IsValid())
+                    {
+                        FString Val;
+                        if (KV.Value->TryGetString(Val))
+                        {
+                            Pin->DefaultValue = Val;
+                        }
+                    }
+                }
+            }
+
+            SpawnedNode = CallNode;
+        }
+        else if (NodeType == TEXT("CallFunction"))
+        {
+            // Generic CallFunction: looks up function by "class" and "function" params
+            FString ClassName, FuncName;
+            const TSharedPtr<FJsonObject>* ParamsObj = nullptr;
+            if ((*NodeObj)->TryGetObjectField(TEXT("params"), ParamsObj))
+            {
+                (*ParamsObj)->TryGetStringField(TEXT("class"), ClassName);
+                (*ParamsObj)->TryGetStringField(TEXT("function"), FuncName);
+            }
+
+            UClass* TargetClass = FindObject<UClass>(ANY_PACKAGE, *ClassName);
+            if (!TargetClass)
+            {
+                UE_LOG(LogTemp, Error, TEXT("BuildBlueprintFromJSON: Class '%s' not found for CallFunction"), *ClassName);
+                continue;
+            }
+
+            UFunction* Func = TargetClass->FindFunctionByName(*FuncName);
+            if (!Func)
+            {
+                UE_LOG(LogTemp, Error, TEXT("BuildBlueprintFromJSON: Function '%s' not found on '%s'"), *FuncName, *ClassName);
+                continue;
+            }
+
+            FGraphNodeCreator<UK2Node_CallFunction> Creator(*Graph);
+            UK2Node_CallFunction* CallNode = Creator.CreateNode();
+            CallNode->SetFromFunction(Func);
+            CallNode->NodePosX = 300;
+            CallNode->NodePosY = 200;
+            Creator.Finalize();
+
+            // Apply additional params as pin default values
+            if (ParamsObj)
+            {
+                for (auto& KV : (*ParamsObj)->Values)
+                {
+                    // Skip "class" and "function" -- those are routing params
+                    if (KV.Key == TEXT("class") || KV.Key == TEXT("function")) continue;
+
+                    UEdGraphPin* Pin = CallNode->FindPin(FName(*KV.Key));
+                    if (Pin && KV.Value.IsValid())
+                    {
+                        FString Val;
+                        if (KV.Value->TryGetString(Val))
+                        {
+                            Pin->DefaultValue = Val;
+                        }
+                        else
+                        {
+                            double NumVal;
+                            if (KV.Value->TryGetNumber(NumVal))
+                            {
+                                Pin->DefaultValue = FString::SanitizeFloat(NumVal);
+                            }
+                            else
+                            {
+                                bool BoolVal;
+                                if (KV.Value->TryGetBool(BoolVal))
+                                {
+                                    Pin->DefaultValue = BoolVal ? TEXT("true") : TEXT("false");
+                                }
+                            }
+                        }
+                        UE_LOG(LogTemp, Log, TEXT("BuildBlueprintFromJSON: Set pin '%s' = '%s'"), *KV.Key, *Pin->DefaultValue);
+                    }
+                }
+            }
+
             SpawnedNode = CallNode;
         }
         else
@@ -172,4 +295,139 @@ void UBlueprintGraphBuilderLibrary::BuildBlueprintFromJSON(
     Blueprint->MarkPackageDirty();
 
     UE_LOG(LogTemp, Log, TEXT("BuildBlueprintFromJSON: Done. %d nodes spawned."), NodeMap.Num());
+}
+
+bool UBlueprintGraphBuilderLibrary::AddComponentToBlueprint(
+    UBlueprint* Blueprint,
+    TSubclassOf<UActorComponent> ComponentClass,
+    const FString& ComponentName,
+    const FString& AttachToName)
+{
+    if (!Blueprint)
+    {
+        UE_LOG(LogTemp, Error, TEXT("AddComponentToBlueprint: Blueprint is null"));
+        return false;
+    }
+
+    if (!ComponentClass)
+    {
+        UE_LOG(LogTemp, Error, TEXT("AddComponentToBlueprint: ComponentClass is null"));
+        return false;
+    }
+
+    USimpleConstructionScript* SCS = Blueprint->SimpleConstructionScript;
+    if (!SCS)
+    {
+        UE_LOG(LogTemp, Error, TEXT("AddComponentToBlueprint: Blueprint has no SimpleConstructionScript"));
+        return false;
+    }
+
+    // Create the SCS node
+    USCS_Node* NewNode = SCS->CreateNode(ComponentClass, *ComponentName);
+    if (!NewNode)
+    {
+        UE_LOG(LogTemp, Error, TEXT("AddComponentToBlueprint: Failed to create SCS node for %s"), *ComponentName);
+        return false;
+    }
+
+    // Attach to parent or add as root
+    if (!AttachToName.IsEmpty())
+    {
+        // Find the parent node
+        TArray<USCS_Node*> AllNodes = SCS->GetAllNodes();
+        USCS_Node* ParentNode = nullptr;
+        for (USCS_Node* Node : AllNodes)
+        {
+            if (Node && Node->GetVariableName().ToString() == AttachToName)
+            {
+                ParentNode = Node;
+                break;
+            }
+        }
+
+        if (ParentNode)
+        {
+            ParentNode->AddChildNode(NewNode);
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("AddComponentToBlueprint: Parent '%s' not found, adding as root"), *AttachToName);
+            SCS->AddNode(NewNode);
+        }
+    }
+    else
+    {
+        SCS->AddNode(NewNode);
+    }
+
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+
+    UE_LOG(LogTemp, Log, TEXT("AddComponentToBlueprint: Added '%s' (%s) to %s"),
+        *ComponentName, *ComponentClass->GetName(), *Blueprint->GetName());
+
+    return true;
+}
+
+bool UBlueprintGraphBuilderLibrary::SetComponentProperty(
+    UBlueprint* Blueprint,
+    const FString& ComponentName,
+    const FString& PropertyName,
+    const FString& JsonValue)
+{
+    if (!Blueprint || !Blueprint->SimpleConstructionScript)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SetComponentProperty: Blueprint or SCS is null"));
+        return false;
+    }
+
+    // Find the SCS node by name
+    TArray<USCS_Node*> AllNodes = Blueprint->SimpleConstructionScript->GetAllNodes();
+    USCS_Node* TargetNode = nullptr;
+    for (USCS_Node* Node : AllNodes)
+    {
+        if (Node && Node->GetVariableName().ToString() == ComponentName)
+        {
+            TargetNode = Node;
+            break;
+        }
+    }
+
+    if (!TargetNode)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SetComponentProperty: Component '%s' not found"), *ComponentName);
+        return false;
+    }
+
+    UActorComponent* Template = TargetNode->ComponentTemplate;
+    if (!Template)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SetComponentProperty: Component '%s' has no template"), *ComponentName);
+        return false;
+    }
+
+    // Find the property by name
+    FProperty* Property = Template->GetClass()->FindPropertyByName(*PropertyName);
+    if (!Property)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SetComponentProperty: Property '%s' not found on %s"),
+            *PropertyName, *Template->GetClass()->GetName());
+        return false;
+    }
+
+    // Set the property value from string using ImportText (works in UE4.27)
+    void* ValuePtr = Property->ContainerPtrToValuePtr<void>(Template);
+    if (!Property->ImportText(*JsonValue, ValuePtr, 0, Template))
+    {
+        UE_LOG(LogTemp, Error, TEXT("SetComponentProperty: Failed to set '%s' from value: %s"),
+            *PropertyName, *JsonValue);
+        return false;
+    }
+
+    Template->MarkPackageDirty();
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+
+    UE_LOG(LogTemp, Log, TEXT("SetComponentProperty: Set %s.%s = %s"),
+        *ComponentName, *PropertyName, *JsonValue);
+
+    return true;
 }

@@ -28,14 +28,34 @@ def launch_pie(level_path: Optional[str] = None) -> bool:
         import unreal
         if level_path:
             unreal.EditorLevelLibrary.load_level(level_path)
-        subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
-        if subsystem is None:
-            return False
         tc.reset_log_cursor()
-        # in_editor=True launches PIE in the editor viewport (required for get_pie_worlds() to work).
-        # in_editor=False would launch a standalone game process which is invisible to get_pie_worlds().
-        subsystem.play_in_editor(in_editor=True)
-        return True
+
+        # Primary: AutoPIEHelper (C++ deferred tick, real PIE with PlayerController).
+        # Defers RequestPlaySession to next engine tick so this handler can return
+        # and the game thread unblocks before PIE initializes.
+        try:
+            unreal.AutoPIEHelper.start_pie()
+            return True
+        except (AttributeError, Exception):
+            pass
+
+        # Fallback 1: LevelEditorSubsystem (UE5+)
+        try:
+            subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+            if subsystem is not None:
+                subsystem.play_in_editor(in_editor=True)
+                return True
+        except (AttributeError, Exception):
+            pass
+
+        # Fallback 2: editor_play_simulate (SIE, no PlayerController)
+        try:
+            unreal.EditorLevelLibrary.editor_play_simulate()
+            return True
+        except (AttributeError, Exception):
+            pass
+
+        return False
     except Exception:
         return False
 
@@ -44,11 +64,31 @@ def stop_pie() -> bool:
     """End the current PIE session."""
     try:
         import unreal
-        subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
-        if subsystem is None:
-            return False
-        subsystem.request_end_play_map()
-        return True
+
+        # Primary: AutoPIEHelper (C++ deferred tick)
+        try:
+            unreal.AutoPIEHelper.stop_pie()
+            return True
+        except (AttributeError, Exception):
+            pass
+
+        # Fallback 1: LevelEditorSubsystem (UE5+)
+        try:
+            subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+            if subsystem is not None:
+                subsystem.request_end_play_map()
+                return True
+        except (AttributeError, Exception):
+            pass
+
+        # Fallback 2: editor_end_play (UE4.27)
+        try:
+            unreal.EditorLevelLibrary.editor_end_play()
+            return True
+        except (AttributeError, Exception):
+            pass
+
+        return False
     except Exception:
         return False
 
