@@ -5,6 +5,7 @@
 #include "ABPJsonParser.h"
 #include "ABPValidator.h"
 #include "ABPVariableBuilder.h"
+#include "ABPAnimGraphBuilder.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 
@@ -61,7 +62,19 @@ FString FAnimBPBuilder::Build(
 		}
 	}
 
-	// Steps 5-6 will be added by later tasks
+	// Step 5: BUILD AnimGraph pipeline (StateMachine, Slot, Root wiring)
+	FAnimBPNodeRegistry Registry;
+	FAnimBPBuildContext BuildCtx;
+	BuildCtx.AnimBlueprint = AnimBP;
+	BuildCtx.Skeleton = Skeleton;
+	BuildCtx.Registry = &Registry;
+
+	{
+		FString BuildError = FAnimBPAnimGraphBuilder::Build(Spec, BuildCtx);
+		if (!BuildError.IsEmpty()) return BuildError;
+	}
+
+	// Steps 6+ will be added by later tasks (state machine states, transitions, event graph)
 
 	return FString();
 }
