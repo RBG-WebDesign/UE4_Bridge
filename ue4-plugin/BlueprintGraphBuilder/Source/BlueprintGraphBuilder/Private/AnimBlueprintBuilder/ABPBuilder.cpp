@@ -6,6 +6,7 @@
 #include "ABPValidator.h"
 #include "ABPVariableBuilder.h"
 #include "ABPAnimGraphBuilder.h"
+#include "ABPStateMachineBuilder.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 
@@ -73,7 +74,13 @@ FString FAnimBPBuilder::Build(
 		if (!BuildError.IsEmpty()) return BuildError;
 	}
 
-	// Steps 6+ will be added by later tasks (state machine states, transitions, event graph)
+	// Step 5b: BUILD States
+	{
+		FString StatesError = FAnimBPStateMachineBuilder::BuildStates(Spec, BuildCtx);
+		if (!StatesError.IsEmpty()) return StatesError;
+	}
+
+	// Steps 6+ will be added by later tasks (transitions, event graph)
 
 	return FString();
 }
