@@ -3,6 +3,8 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+#include "Dom/JsonObject.h"
+#include "Dom/JsonValue.h"
 
 static FString ParseVariables(const TSharedPtr<FJsonObject>& RootObj, TArray<FAnimBPVariableSpec>& OutVariables)
 {
@@ -168,7 +170,7 @@ static FString ParseStateMachine(const TSharedPtr<FJsonObject>& RootObj, TArray<
 
 		if (!(*StateObj)->TryGetStringField(TEXT("animation"), State.Animation) || State.Animation.IsEmpty())
 		{
-			return FString::Printf(TEXT("[ABPJsonParser] state[%d] missing required field 'animation'"), i);
+			return FString::Printf(TEXT("[ABPJsonParser] state_machine.states[%d] missing required field 'animation'"), i);
 		}
 
 		(*StateObj)->TryGetBoolField(TEXT("looping"), State.bLooping);
