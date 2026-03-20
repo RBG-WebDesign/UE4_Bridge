@@ -244,6 +244,7 @@ FString FAnimBPStateMachineBuilder::BuildTransitions(const FAnimBPBuildSpec& Spe
 			UK2Node_VariableGet* VarGet = NewObject<UK2Node_VariableGet>(TransGraph);
 			VarGet->VariableReference.SetSelfMember(FName(*Trans.Condition.Variable));
 			VarGet->CreateNewGuid();
+			VarGet->PostPlacedNewNode();
 			VarGet->AllocateDefaultPins();
 			TransGraph->AddNode(VarGet, false, false);
 			VarGet->NodePosX = ResultNode->NodePosX - 300;
@@ -274,6 +275,7 @@ FString FAnimBPStateMachineBuilder::BuildTransitions(const FAnimBPBuildSpec& Spe
 				// Insert NOT node between VarGet and CanEnterTransition
 				UK2Node_CallFunction* NotNode = NewObject<UK2Node_CallFunction>(TransGraph);
 				NotNode->CreateNewGuid();
+				NotNode->PostPlacedNewNode();
 				NotNode->FunctionReference.SetExternalMember(
 					GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, Not_Bool),
 					UKismetMathLibrary::StaticClass());
