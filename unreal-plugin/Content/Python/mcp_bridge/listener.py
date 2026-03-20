@@ -53,12 +53,21 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
     """Handles incoming HTTP requests from the MCP server."""
 
     def log_message(self, format: str, *args: Any) -> None:
-        """Route HTTP logs to UE4's output log."""
+        """Route HTTP logs to UE4's output log.
+
+        Suppresses GET health-check spam (/status, /ping, /) to keep the
+        output log readable. POST commands always log.
+        """
+        message = format % args
+        # Skip logging GET health checks -- they fire constantly from the
+        # MCP host and drown out useful command traffic.
+        if '"GET ' in message:
+            return
         try:
             import unreal
-            unreal.log(f"[MCP Bridge HTTP] {format % args}")
+            unreal.log(f"[MCP Bridge HTTP] {message}")
         except ImportError:
-            print(f"[MCP Bridge HTTP] {format % args}")
+            print(f"[MCP Bridge HTTP] {message}")
 
     def do_POST(self) -> None:
         """Handle POST requests containing JSON commands."""

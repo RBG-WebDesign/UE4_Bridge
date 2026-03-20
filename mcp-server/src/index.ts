@@ -27,6 +27,7 @@ import { createBlueprintTools } from "./tools/blueprints.js";
 import { createOperationsTools } from "./tools/operations.js";
 import { createPromptBrushTools } from "./tools/promptbrush.js";
 import { createGameplayTools } from "./tools/gameplay.js";
+import { createEffectsTools } from "./tools/effects.js";
 import type { ToolDefinition } from "./types.js";
 
 async function main(): Promise<void> {
@@ -50,6 +51,7 @@ async function main(): Promise<void> {
     ...createOperationsTools(client, history),
     ...createPromptBrushTools(client),
     ...createGameplayTools(client),
+    ...createEffectsTools(client),
   ];
 
   // Build a lookup map
@@ -68,6 +70,8 @@ async function main(): Promise<void> {
     "widget_build_from_json",
     "prompt_generate",
     "level_save",
+    "pp_volume_spawn", "pp_volume_modify", "pp_preset",
+    "camera_shake_blueprint", "camera_shake_spawn", "camera_shake_trigger",
   ]);
 
   // Handle tools/list

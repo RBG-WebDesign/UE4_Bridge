@@ -67,6 +67,16 @@ from mcp_bridge.handlers.gameplay import (
     handle_telemetry_snapshot,
     handle_run_acceptance_tests,
 )
+from mcp_bridge.handlers.effects import (
+    handle_pp_volume_spawn,
+    handle_pp_volume_modify,
+    handle_pp_preset,
+    handle_camera_shake_spawn,
+    handle_camera_shake_play,
+    handle_camera_shake_blueprint,
+    handle_camera_shake_trigger,
+    handle_console_effect,
+)
 
 
 # Command dispatch table
@@ -134,6 +144,16 @@ COMMAND_ROUTES: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "gameplay_pie_stop": handle_pie_stop,
     "gameplay_telemetry_snapshot": handle_telemetry_snapshot,
     "gameplay_run_acceptance_tests": handle_run_acceptance_tests,
+
+    # Effects (PostProcess, Camera Shake, Visual Effects)
+    "pp_volume_spawn": handle_pp_volume_spawn,
+    "pp_volume_modify": handle_pp_volume_modify,
+    "pp_preset": handle_pp_preset,
+    "camera_shake_spawn": handle_camera_shake_spawn,
+    "camera_shake_play": handle_camera_shake_play,
+    "camera_shake_blueprint": handle_camera_shake_blueprint,
+    "camera_shake_trigger": handle_camera_shake_trigger,
+    "console_effect": handle_console_effect,
 
     # Transaction support (called from MCP server for undo/redo)
     "begin_transaction": lambda params: _handle_transaction("begin", params),
