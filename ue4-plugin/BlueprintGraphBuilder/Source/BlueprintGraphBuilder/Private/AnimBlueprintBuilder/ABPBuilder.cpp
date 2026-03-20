@@ -63,7 +63,6 @@ FString FAnimBPBuilder::Build(
 	}
 
 	// Step 5: BUILD AnimGraph pipeline (StateMachine, Slot, Root wiring)
-	FAnimBPNodeRegistry Registry;
 	FAnimBPBuildContext BuildCtx;
 	BuildCtx.AnimBlueprint = AnimBP;
 	BuildCtx.Skeleton = Skeleton;

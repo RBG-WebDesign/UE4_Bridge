@@ -61,10 +61,10 @@ FString FAnimBPAnimGraphBuilder::Build(const FAnimBPBuildSpec& Spec, FAnimBPBuil
 		}
 
 		UAnimGraphNode_Base* NewNode = NewObject<UAnimGraphNode_Base>(AnimGraph, NodeClass);
-		AnimGraph->AddNode(NewNode, false, false);
 		NewNode->CreateNewGuid();
 		NewNode->PostPlacedNewNode();
 		NewNode->AllocateDefaultPins();
+		AnimGraph->AddNode(NewNode, false, false);
 		NewNode->NodePosX = NodeX + (i * 300);
 		NewNode->NodePosY = RootNode->NodePosY;
 
@@ -85,6 +85,10 @@ FString FAnimBPAnimGraphBuilder::Build(const FAnimBPBuildSpec& Spec, FAnimBPBuil
 			if (SMNode)
 			{
 				Ctx.StateMachineGraph = SMNode->GetStateMachineGraph();
+				if (!Ctx.StateMachineGraph)
+				{
+					return TEXT("[ABPAnimGraphBuilder] StateMachine node has no state machine graph");
+				}
 			}
 		}
 
@@ -101,10 +105,11 @@ FString FAnimBPAnimGraphBuilder::Build(const FAnimBPBuildSpec& Spec, FAnimBPBuil
 			UEdGraphPin* OutputPin = FindPinByName(LastNode, TEXT("Pose"), EGPD_Output);
 			if (!OutputPin) OutputPin = FindPinByName(LastNode, TEXT("Result"), EGPD_Output);
 			UEdGraphPin* RootInput = FindPinByName(RootNode, TEXT("Result"), EGPD_Input);
-			if (OutputPin && RootInput)
-			{
-				OutputPin->MakeLinkTo(RootInput);
-			}
+			if (!OutputPin)
+				return FString::Printf(TEXT("[ABPAnimGraphBuilder] no output pose pin on node '%s'"), *LastId);
+			if (!RootInput)
+				return TEXT("[ABPAnimGraphBuilder] no input pin on Root node");
+			OutputPin->MakeLinkTo(RootInput);
 		}
 
 		// Wire pipeline nodes in sequence: node[i] output -> node[i+1] input
@@ -118,10 +123,11 @@ FString FAnimBPAnimGraphBuilder::Build(const FAnimBPBuildSpec& Spec, FAnimBPBuil
 				if (!SrcOut) SrcOut = FindPinByName(Source, TEXT("Result"), EGPD_Output);
 				UEdGraphPin* TgtIn = FindPinByName(Target, TEXT("Source"), EGPD_Input);
 				if (!TgtIn) TgtIn = FindPinByName(Target, TEXT("Pose"), EGPD_Input);
-				if (SrcOut && TgtIn)
-				{
-					SrcOut->MakeLinkTo(TgtIn);
-				}
+				if (!SrcOut)
+					return FString::Printf(TEXT("[ABPAnimGraphBuilder] no output pose pin on '%s'"), *Spec.AnimGraphPipeline[i].Id);
+				if (!TgtIn)
+					return FString::Printf(TEXT("[ABPAnimGraphBuilder] no input pose pin on '%s'"), *Spec.AnimGraphPipeline[i+1].Id);
+				SrcOut->MakeLinkTo(TgtIn);
 			}
 		}
 	}
