@@ -1,5 +1,6 @@
 #include "ABPBuilder.h"
 #include "ABPBuildSpec.h"
+#include "ABPNodeRegistry.h"
 
 FString FAnimBPBuilder::Build(
 	const FString& PackagePath,

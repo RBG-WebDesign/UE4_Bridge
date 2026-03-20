@@ -1,9 +1,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "ABPNodeRegistry.h"
 
 class UAnimBlueprint;
-class FAnimBPNodeRegistry;
 
 class FAnimBPBuilder
 {
@@ -19,5 +19,5 @@ public:
 	FString Validate(const FString& JsonString);
 
 private:
-	// Registry will be added when ABPNodeRegistry is created in Task 6
+	FAnimBPNodeRegistry Registry;
 };
