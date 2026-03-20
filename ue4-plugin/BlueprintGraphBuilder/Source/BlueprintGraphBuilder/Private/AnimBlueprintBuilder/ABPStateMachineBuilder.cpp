@@ -295,7 +295,27 @@ FString FAnimBPStateMachineBuilder::BuildTransitions(const FAnimBPBuildSpec& Spe
 				NotOutput->MakeLinkTo(CanEnterPin);
 			}
 		}
-		// time_remaining conditions handled in Task 9
+		else if (Trans.Condition.Type == TEXT("time_remaining"))
+		{
+			// Use UE4's built-in automatic transition rule based on sequence player remaining time.
+			// No condition graph needed -- the engine handles this natively.
+
+			// bAutomaticRuleBasedOnSequencePlayerInState is a uint8:1 bitfield in UE4.27.
+			// Direct assignment can corrupt adjacent bits. Use FBoolProperty for safe set.
+			FBoolProperty* AutoRuleProp = CastField<FBoolProperty>(
+				TransNode->GetClass()->FindPropertyByName(TEXT("bAutomaticRuleBasedOnSequencePlayerInState")));
+			if (AutoRuleProp)
+			{
+				AutoRuleProp->SetPropertyValue_InContainer(TransNode, true);
+			}
+			else
+			{
+				return FString::Printf(TEXT("[ABPStateMachineBuilder] transition %d: could not find bAutomaticRuleBasedOnSequencePlayerInState property"), Index);
+			}
+
+			// AutomaticRuleTriggerTime is a regular float, safe to set directly
+			TransNode->AutomaticRuleTriggerTime = Trans.Condition.Threshold;
+		}
 	}
 
 	return FString();
