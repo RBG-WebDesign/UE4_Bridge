@@ -28,8 +28,14 @@ TArray<FString> FAnimBPValidator::Validate(const FAnimBPBuildSpec& Spec)
 
 	// Rule 2: Unique state IDs
 	TSet<FString> StateIds;
-	for (const FAnimBPStateSpec& State : Spec.States)
+	for (int32 Index = 0; Index < Spec.States.Num(); ++Index)
 	{
+		const FAnimBPStateSpec& State = Spec.States[Index];
+		if (State.Id.IsEmpty())
+		{
+			Errors.Add(FString::Printf(TEXT("[ABPValidator] state at index %d has empty id"), Index));
+			continue;
+		}
 		if (StateIds.Contains(State.Id))
 		{
 			Errors.Add(FString::Printf(TEXT("[ABPValidator] duplicate state id '%s'"), *State.Id));
@@ -85,6 +91,19 @@ TArray<FString> FAnimBPValidator::Validate(const FAnimBPBuildSpec& Spec)
 						*Trans.From, *Trans.To, *Trans.Condition.Variable));
 				}
 			}
+		}
+	}
+
+	// Rule: condition type must be known
+	for (const FAnimBPTransitionSpec& Trans : Spec.Transitions)
+	{
+		if (!Trans.Condition.Type.IsEmpty()
+			&& Trans.Condition.Type != TEXT("bool_variable")
+			&& Trans.Condition.Type != TEXT("time_remaining"))
+		{
+			Errors.Add(FString::Printf(
+				TEXT("[ABPValidator] transition %s->%s has unknown condition type '%s'"),
+				*Trans.From, *Trans.To, *Trans.Condition.Type));
 		}
 	}
 
