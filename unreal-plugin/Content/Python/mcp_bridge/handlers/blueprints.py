@@ -728,6 +728,49 @@ def handle_blueprint_build_from_json(params: Dict[str, Any]) -> Dict[str, Any]:
         return {"success": False, "data": {}, "error": str(e)}
 
 
+@transactional("Build AnimBlueprint from JSON")
+def handle_anim_blueprint_build_from_json(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Build an Animation Blueprint from JSON using AnimBlueprintBuilderLibrary.
+
+    Args:
+        params:
+            - package_path (str): Content directory path e.g. /Game/AnimBP
+            - asset_name (str): AnimBlueprint asset name e.g. ABP_Enemy
+            - skeleton_path (str): Full path to Skeleton asset e.g. /Game/Mannequin/Mesh/UE4_Mannequin_Skeleton
+            - json_spec (str): JSON specification for the AnimBP graph
+    """
+    try:
+        import unreal
+
+        package_path = params.get("package_path", "")
+        asset_name = params.get("asset_name", "")
+        skeleton_path = params.get("skeleton_path", "")
+        json_spec = params.get("json_spec", "")
+
+        if not package_path or not asset_name:
+            return {"success": False, "data": {}, "error": "Missing 'package_path' or 'asset_name'"}
+        if not skeleton_path:
+            return {"success": False, "data": {}, "error": "Missing 'skeleton_path'"}
+        if not json_spec:
+            return {"success": False, "data": {}, "error": "Missing 'json_spec'"}
+
+        lib = getattr(unreal, "AnimBlueprintBuilderLibrary", None)
+        if lib is None:
+            return {"success": False, "data": {}, "error": "AnimBlueprintBuilderLibrary not available"}
+
+        result = lib.build_anim_blueprint_from_json(
+            package_path, asset_name, skeleton_path, json_spec
+        )
+
+        full_path = f"{package_path}/{asset_name}"
+        if result == "":
+            return {"success": True, "data": {"path": full_path}, "error": None}
+        else:
+            return {"success": False, "data": {"path": full_path}, "error": result}
+    except Exception as e:
+        return {"success": False, "data": {}, "error": str(e)}
+
+
 def handle_widget_build_from_json(params: Dict[str, Any]) -> Dict[str, Any]:
     """Create a Widget Blueprint from JSON using WidgetBlueprintBuilderLibrary.
 

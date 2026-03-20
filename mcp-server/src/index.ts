@@ -64,6 +64,7 @@ async function main(): Promise<void> {
     "actor_organize", "actor_snap_to_socket", "batch_spawn",
     "material_create", "material_apply",
     "blueprint_create", "blueprint_compile", "blueprint_build_from_json", "blueprint_build_from_description",
+    "anim_blueprint_build_from_json",
     "widget_build_from_json",
     "prompt_generate",
     "level_save",

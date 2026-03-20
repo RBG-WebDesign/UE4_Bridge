@@ -53,6 +53,7 @@ from mcp_bridge.handlers.blueprints import (
     handle_blueprint_compile,
     handle_blueprint_document,
     handle_blueprint_build_from_json,
+    handle_anim_blueprint_build_from_json,
     handle_widget_build_from_json,
 )
 from mcp_bridge.handlers.promptbrush import (
@@ -120,6 +121,7 @@ COMMAND_ROUTES: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "blueprint_compile": handle_blueprint_compile,
     "blueprint_document": handle_blueprint_document,
     "blueprint_build_from_json": handle_blueprint_build_from_json,
+    "anim_blueprint_build_from_json": handle_anim_blueprint_build_from_json,
     "widget_build_from_json": handle_widget_build_from_json,
 
     # PromptBrush

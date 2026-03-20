@@ -232,6 +232,39 @@ print('blueprint_build_from_json: done')
       },
     },
     {
+      name: "anim_blueprint_build_from_json",
+      description:
+        "Build an Animation Blueprint from a JSON specification. " +
+        "Creates the AnimBP asset with the given skeleton and populates the anim graph " +
+        "from the JSON spec (state machines, blend spaces, slots, etc.).",
+      inputSchema: z.object({
+        package_path: z
+          .string()
+          .startsWith("/")
+          .describe("Content directory path, e.g. /Game/AnimBP"),
+        asset_name: z
+          .string()
+          .min(1)
+          .describe("Animation Blueprint asset name, e.g. ABP_Enemy"),
+        skeleton_path: z
+          .string()
+          .startsWith("/")
+          .describe("Full path to Skeleton asset, e.g. /Game/Mannequin/Mesh/UE4_Mannequin_Skeleton"),
+        json_spec: z
+          .string()
+          .min(1)
+          .describe("JSON specification string for the AnimBP graph"),
+      }),
+      handler: async (params) => {
+        const result = await client.sendCommand("anim_blueprint_build_from_json", params);
+        return {
+          content: [
+            { type: "text" as const, text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      },
+    },
+    {
       name: "blueprint_build_from_description",
       description:
         "Build a Blueprint event graph from high-level pattern templates. " +
