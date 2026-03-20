@@ -83,10 +83,11 @@ FString FAnimBPStateMachineBuilder::BuildStates(const FAnimBPBuildSpec& Spec, FA
 			}
 		}
 
-		if (SeqOutput && ResultInput)
-		{
-			SeqOutput->MakeLinkTo(ResultInput);
-		}
+		if (!SeqOutput)
+			return FString::Printf(TEXT("[ABPStateMachineBuilder] no output pose pin on SequencePlayer for state '%s'"), *State.Name);
+		if (!ResultInput)
+			return FString::Printf(TEXT("[ABPStateMachineBuilder] no input pin on StateResult for state '%s'"), *State.Name);
+		SeqOutput->MakeLinkTo(ResultInput);
 
 		// 7. Store in context and position nodes
 		Ctx.StateNodeMap.Add(State.Id, StateNode);
@@ -124,10 +125,11 @@ FString FAnimBPStateMachineBuilder::BuildStates(const FAnimBPBuildSpec& Spec, FA
 					}
 				}
 
-				if (EntryOutput && StateInput)
-				{
-					EntryOutput->MakeLinkTo(StateInput);
-				}
+				if (!EntryOutput)
+					return TEXT("[ABPStateMachineBuilder] no output pin on entry node");
+				if (!StateInput)
+					return FString::Printf(TEXT("[ABPStateMachineBuilder] no input pin on entry state '%s'"), *State.Id);
+				EntryOutput->MakeLinkTo(StateInput);
 			}
 			break;
 		}
