@@ -49,7 +49,7 @@ ShaderWeave (web app, future) --HTTP /shaderweave/v1/*:8080--> Python Listener (
 - `validation.ts` -- shared validation helpers
 - `tools/` -- one file per tool group (actors, blueprints, level, materials, operations, project, system, viewport). Each exports a `create*Tools(client)` factory returning `ToolDefinition[]`.
 
-`index.ts` collects all tool arrays, builds a lookup map, and tracks which commands are "modifying" (recorded in history for undo). Modifying commands: actor_spawn, actor_modify, actor_delete, actor_duplicate, actor_organize, actor_snap_to_socket, batch_spawn, material_create, material_apply, blueprint_create, blueprint_compile, blueprint_build_from_json, level_save.
+`index.ts` collects all tool arrays, builds a lookup map, and tracks which commands are "modifying" (recorded in history for undo). Modifying commands: actor_spawn, actor_modify, actor_delete, actor_duplicate, actor_organize, actor_snap_to_socket, batch_spawn, material_create, material_apply, blueprint_create, blueprint_compile, blueprint_build_from_json, anim_blueprint_build_from_json, level_save.
 
 ### Python Listener (`unreal-plugin/Content/Python/mcp_bridge/`)
 - `listener.py` -- HTTP server on background thread, queues commands to game thread via `register_slate_post_tick_callback`
@@ -74,11 +74,15 @@ The listener always responds with:
 The `UnrealClient.sendCommand()` in `unreal-client.ts` is the only code that makes these HTTP calls. Connection errors and timeouts resolve (not reject) with `{success: false}`.
 
 ### BlueprintGraphBuilder C++ Plugin (`ue4-plugin/BlueprintGraphBuilder/`)
-A UE4.27 editor plugin (C++) that builds Blueprint event graphs and Widget Blueprints from JSON. Compiled inside a UE4 project (copied to `YourProject/Plugins/`), not by `npm run build`. Contains two subsystems:
+A UE4.27 editor plugin (C++) that builds Blueprint event graphs, Widget Blueprints, Behavior Trees, and Animation Blueprints from JSON. Compiled inside a UE4 project (copied to `YourProject/Plugins/`), not by `npm run build`. Contains four subsystems:
 
 **Blueprint Graph Builder** (11 passes complete) -- builds event graphs from JSON. Exposes `UBlueprintGraphBuilderLibrary::BuildBlueprintFromJSON` to Python. The Python handler for `blueprint_build_from_json` calls this.
 
 **Widget Blueprint Builder** (design spec complete, implementation not started) -- builds UMG Widget Blueprints from JSON. Lives under `Private/WidgetBuilder/` subdirectory. Exposes `UWidgetBlueprintBuilderLibrary` with `BuildWidgetFromJSON`, `RebuildWidgetFromJSON`, `ValidateWidgetJSON`. Spec: `docs/superpowers/specs/2026-03-18-widget-blueprint-builder-design.md`.
+
+**Behavior Tree Builder** (complete) -- builds BT node graphs from JSON with full blackboard support. Lives under `Private/BehaviorTreeBuilder/` subdirectory. Exposes `UBehaviorTreeBuilderLibrary::BuildBehaviorTreeFromJSON`. Supports 26 node types across composites, tasks, decorators, and services. Spec: `docs/superpowers/specs/2026-03-19-behavior-tree-builder-design.md`.
+
+**Animation Blueprint Builder** (complete) -- builds Animation Blueprints from JSON targeting UE4's AnimGraph system. Lives under `Private/AnimBlueprintBuilder/` subdirectory. Exposes `UAnimBlueprintBuilderLibrary` with `BuildAnimBlueprintFromJSON`, `RebuildAnimBlueprintFromJSON`, `ValidateAnimBlueprintJSON`. v1 supports: bool variables, StateMachine + Slot pipeline, states with SequencePlayer, transitions with bool_variable and time_remaining conditions, event graph delegation to BlueprintGraphBuilder. Spec: `docs/superpowers/specs/2026-03-19-anim-blueprint-builder-design.md`.
 
 ### ShaderWeave Bridge (`unreal-plugin/Content/Python/mcp_bridge/shaderweave/`)
 A separate product that shares the UE_Bridge HTTP listener. Pushes HLSL into Material Custom Expression nodes and returns compile feedback. Uses its own URL namespace (`/shaderweave/v1/*`) separate from the existing `POST /` command router. ShaderWeave is its own repo/product -- UE_Bridge only hosts the transport and UE4 execution layer. Spec: `docs/superpowers/specs/2026-03-18-shaderweave-bridge-mvp-design.md`.
@@ -127,7 +131,8 @@ Multiple agents may work on this repo concurrently. Each workstream has its own 
 | Blueprint Graph Builder | `ue4-plugin/BlueprintGraphBuilder/` | 11 passes complete | `docs/superpowers/specs/2026-03-17-blueprint-graph-builder-design.md` |
 | Widget Blueprint Builder | `ue4-plugin/BlueprintGraphBuilder/Private/WidgetBuilder/` | Design complete, Pass 1 planned | `docs/superpowers/specs/2026-03-18-widget-blueprint-builder-design.md` |
 | ShaderWeave Bridge | `unreal-plugin/Content/Python/mcp_bridge/shaderweave/` | Design complete | `docs/superpowers/specs/2026-03-18-shaderweave-bridge-mvp-design.md` |
-| Behavior Tree Builder | `ue4-plugin/BlueprintGraphBuilder/Private/BehaviorTreeBuilder/` | In progress | `docs/superpowers/specs/2026-03-19-behavior-tree-builder-design.md` |
+| Behavior Tree Builder | `ue4-plugin/BlueprintGraphBuilder/Private/BehaviorTreeBuilder/` | Complete (26 node types) | `docs/superpowers/specs/2026-03-19-behavior-tree-builder-design.md` |
+| Animation Blueprint Builder | `ue4-plugin/BlueprintGraphBuilder/Private/AnimBlueprintBuilder/` | Complete (v1) | `docs/superpowers/specs/2026-03-19-anim-blueprint-builder-design.md` |
 
 ShaderWeave is a separate product that shares the UE_Bridge listener. It uses `/shaderweave/v1/*` URL paths, not the `POST /` command router. Do not mix ShaderWeave handlers into `handlers/` or ShaderWeave routes into `router.py`. Note: `listener.py` requires minimal path-routing changes for ShaderWeave (see ShaderWeave spec for details).
 
