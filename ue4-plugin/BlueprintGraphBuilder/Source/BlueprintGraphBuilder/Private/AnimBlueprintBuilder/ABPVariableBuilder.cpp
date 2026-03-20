@@ -1,6 +1,7 @@
 #include "ABPVariableBuilder.h"
 #include "ABPBuildSpec.h"
 #include "Animation/AnimBlueprint.h"
+#include "Engine/Blueprint.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "EdGraphSchema_K2.h"
 
@@ -33,6 +34,19 @@ FString FAnimBPVariableBuilder::AddVariables(
 		if (!bSuccess)
 		{
 			return FString::Printf(TEXT("[ABPVariableBuilder] failed to add variable '%s'"), *Var.Name);
+		}
+
+		// Set default value
+		if (!Var.Default.IsEmpty() && Var.Default == TEXT("true"))
+		{
+			for (FBPVariableDescription& VarDesc : AnimBP->NewVariables)
+			{
+				if (VarDesc.VarName == FName(*Var.Name))
+				{
+					VarDesc.DefaultValue = TEXT("true");
+					break;
+				}
+			}
 		}
 
 		UE_LOG(LogTemp, Log, TEXT("[ABPVariableBuilder] added %s variable '%s'"), *Var.Type, *Var.Name);

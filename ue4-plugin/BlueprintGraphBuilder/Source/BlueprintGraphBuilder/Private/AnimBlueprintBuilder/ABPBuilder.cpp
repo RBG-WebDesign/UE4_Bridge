@@ -6,6 +6,7 @@
 #include "ABPValidator.h"
 #include "ABPVariableBuilder.h"
 #include "Kismet2/KismetEditorUtilities.h"
+#include "Kismet2/BlueprintEditorUtils.h"
 
 FString FAnimBPBuilder::Build(
 	const FString& PackagePath,
@@ -49,10 +50,15 @@ FString FAnimBPBuilder::Build(
 	}
 
 	// Compile after variables so they are available for later steps
+	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(AnimBP);
 	{
 		FKismetCompilerOptions CompileOptions;
 		FCompilerResultsLog Results;
 		FKismetEditorUtilities::CompileBlueprint(AnimBP, CompileOptions, &Results);
+		if (Results.NumErrors > 0)
+		{
+			return FString::Printf(TEXT("[AnimBPBuilder] compile after variables failed with %d error(s)"), Results.NumErrors);
+		}
 	}
 
 	// Steps 5-6 will be added by later tasks
