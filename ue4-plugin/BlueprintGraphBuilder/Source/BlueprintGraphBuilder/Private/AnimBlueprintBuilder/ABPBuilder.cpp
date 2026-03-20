@@ -7,6 +7,7 @@
 #include "ABPVariableBuilder.h"
 #include "ABPAnimGraphBuilder.h"
 #include "ABPStateMachineBuilder.h"
+#include "BlueprintGraphBuilderLibrary.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 
@@ -86,14 +87,93 @@ FString FAnimBPBuilder::Build(
 		if (!TransError.IsEmpty()) return TransError;
 	}
 
-	// Steps 6+ will be added by later tasks (event graph)
+	// Step 9: EVENT GRAPH (delegate to existing BlueprintGraphBuilder)
+	if (!Spec.EventGraphJson.IsEmpty())
+	{
+		UBlueprintGraphBuilderLibrary::BuildBlueprintFromJSON(
+			AnimBP, Spec.EventGraphJson, /*bClearExistingGraph=*/ false);
+	}
 
+	// Step 10: FINAL COMPILE
+	{
+		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(AnimBP);
+		FKismetCompilerOptions CompileOptions;
+		FCompilerResultsLog Results;
+		FKismetEditorUtilities::CompileBlueprint(AnimBP, CompileOptions, &Results);
+		if (Results.NumErrors > 0)
+		{
+			return FString::Printf(TEXT("[AnimBPBuilder] final compile failed with %d error(s)"), Results.NumErrors);
+		}
+	}
+	AnimBP->MarkPackageDirty();
+
+	UE_LOG(LogTemp, Log, TEXT("[AnimBPBuilder] built AnimBP '%s'"), *AnimBP->GetName());
 	return FString();
 }
 
 FString FAnimBPBuilder::Rebuild(UAnimBlueprint* AnimBP, const FString& JsonString)
 {
-	return TEXT("[AnimBPBuilder] Rebuild not yet implemented");
+	if (!AnimBP) return TEXT("[AnimBPBuilder] AnimBlueprint is null");
+
+	// Parse + validate
+	FAnimBPBuildSpec Spec;
+	FString ParseError = FAnimBPJsonParser::Parse(JsonString, Spec);
+	if (!ParseError.IsEmpty()) return ParseError;
+
+	TArray<FString> Errors = FAnimBPValidator::Validate(Spec);
+	if (Errors.Num() > 0) return FString::Join(Errors, TEXT("\n"));
+
+	// Variables (add missing only, skip existing)
+	FString VarError = FAnimBPVariableBuilder::AddVariables(AnimBP, Spec.Variables);
+	if (!VarError.IsEmpty()) return VarError;
+
+	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(AnimBP);
+	{
+		FKismetCompilerOptions CompileOptions;
+		FCompilerResultsLog Results;
+		FKismetEditorUtilities::CompileBlueprint(AnimBP, CompileOptions, &Results);
+	}
+
+	// Build context
+	FAnimBPBuildContext Ctx;
+	Ctx.AnimBlueprint = AnimBP;
+	Ctx.Skeleton = AnimBP->TargetSkeleton;
+	Ctx.Registry = &Registry;
+
+	// NOTE: v1 Rebuild assumes a clean AnimBP (no existing graph nodes to clear).
+	// A full implementation would clear existing AnimGraph and state machine nodes first.
+
+	// Same build steps as Build (AnimGraph, States, Transitions, EventGraph)
+	FString GraphError = FAnimBPAnimGraphBuilder::Build(Spec, Ctx);
+	if (!GraphError.IsEmpty()) return GraphError;
+
+	FString StateError = FAnimBPStateMachineBuilder::BuildStates(Spec, Ctx);
+	if (!StateError.IsEmpty()) return StateError;
+
+	FString TransError = FAnimBPStateMachineBuilder::BuildTransitions(Spec, Ctx);
+	if (!TransError.IsEmpty()) return TransError;
+
+	if (!Spec.EventGraphJson.IsEmpty())
+	{
+		UBlueprintGraphBuilderLibrary::BuildBlueprintFromJSON(
+			AnimBP, Spec.EventGraphJson, /*bClearExistingGraph=*/ false);
+	}
+
+	// Final compile
+	{
+		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(AnimBP);
+		FKismetCompilerOptions CompileOptions;
+		FCompilerResultsLog Results;
+		FKismetEditorUtilities::CompileBlueprint(AnimBP, CompileOptions, &Results);
+		if (Results.NumErrors > 0)
+		{
+			return FString::Printf(TEXT("[AnimBPBuilder] final compile failed with %d error(s)"), Results.NumErrors);
+		}
+	}
+	AnimBP->MarkPackageDirty();
+
+	UE_LOG(LogTemp, Log, TEXT("[AnimBPBuilder] rebuilt AnimBP '%s'"), *AnimBP->GetName());
+	return FString();
 }
 
 FString FAnimBPBuilder::Validate(const FString& JsonString)
