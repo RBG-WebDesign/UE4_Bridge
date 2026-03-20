@@ -5,9 +5,15 @@
 #include "AnimationStateMachineGraph.h"
 #include "AnimStateNode.h"
 #include "AnimStateEntryNode.h"
+#include "AnimStateTransitionNode.h"
 #include "AnimationStateGraph.h"
+#include "AnimationTransitionGraph.h"
 #include "AnimGraphNode_SequencePlayer.h"
 #include "AnimGraphNode_StateResult.h"
+#include "AnimGraphNode_TransitionResult.h"
+#include "K2Node_VariableGet.h"
+#include "K2Node_CallFunction.h"
+#include "Kismet/KismetMathLibrary.h"
 #include "EdGraphSchema_K2.h"
 
 FString FAnimBPStateMachineBuilder::BuildStates(const FAnimBPBuildSpec& Spec, FAnimBPBuildContext& Ctx)
@@ -140,5 +146,155 @@ FString FAnimBPStateMachineBuilder::BuildStates(const FAnimBPBuildSpec& Spec, FA
 
 FString FAnimBPStateMachineBuilder::BuildTransitions(const FAnimBPBuildSpec& Spec, FAnimBPBuildContext& Ctx)
 {
-	return FString(); // Implemented in Task 8
+	if (!Ctx.StateMachineGraph)
+	{
+		return TEXT("[ABPStateMachineBuilder] StateMachineGraph is null -- cannot build transitions");
+	}
+
+	for (int32 Index = 0; Index < Spec.Transitions.Num(); ++Index)
+	{
+		const FAnimBPTransitionSpec& Trans = Spec.Transitions[Index];
+
+		// 1. Look up states
+		UAnimStateNode* FromState = Ctx.StateNodeMap.FindRef(Trans.From);
+		UAnimStateNode* ToState = Ctx.StateNodeMap.FindRef(Trans.To);
+		if (!FromState)
+		{
+			return FString::Printf(TEXT("[ABPStateMachineBuilder] transition %d: source state '%s' not found"), Index, *Trans.From);
+		}
+		if (!ToState)
+		{
+			return FString::Printf(TEXT("[ABPStateMachineBuilder] transition %d: target state '%s' not found"), Index, *Trans.To);
+		}
+
+		// 2. Create transition node
+		UAnimStateTransitionNode* TransNode = NewObject<UAnimStateTransitionNode>(Ctx.StateMachineGraph);
+		TransNode->CreateNewGuid();
+		TransNode->PostPlacedNewNode();
+		TransNode->AllocateDefaultPins();
+		Ctx.StateMachineGraph->AddNode(TransNode, false, false);
+
+		// 3. Wire state pins: FromState output -> TransNode input, TransNode output -> ToState input
+		UEdGraphPin* FromOutput = nullptr;
+		for (UEdGraphPin* Pin : FromState->Pins)
+		{
+			if (Pin->Direction == EGPD_Output) { FromOutput = Pin; break; }
+		}
+		UEdGraphPin* TransInput = nullptr;
+		for (UEdGraphPin* Pin : TransNode->Pins)
+		{
+			if (Pin->Direction == EGPD_Input) { TransInput = Pin; break; }
+		}
+		if (!FromOutput)
+			return FString::Printf(TEXT("[ABPStateMachineBuilder] transition %d: no output pin on source state '%s'"), Index, *Trans.From);
+		if (!TransInput)
+			return FString::Printf(TEXT("[ABPStateMachineBuilder] transition %d: no input pin on transition node"), Index);
+		FromOutput->MakeLinkTo(TransInput);
+
+		UEdGraphPin* TransOutput = nullptr;
+		for (UEdGraphPin* Pin : TransNode->Pins)
+		{
+			if (Pin->Direction == EGPD_Output) { TransOutput = Pin; break; }
+		}
+		UEdGraphPin* ToInput = nullptr;
+		for (UEdGraphPin* Pin : ToState->Pins)
+		{
+			if (Pin->Direction == EGPD_Input) { ToInput = Pin; break; }
+		}
+		if (!TransOutput)
+			return FString::Printf(TEXT("[ABPStateMachineBuilder] transition %d: no output pin on transition node"), Index);
+		if (!ToInput)
+			return FString::Printf(TEXT("[ABPStateMachineBuilder] transition %d: no input pin on target state '%s'"), Index, *Trans.To);
+		TransOutput->MakeLinkTo(ToInput);
+
+		// 4. Set blend time
+		TransNode->CrossfadeDuration = Trans.BlendTime;
+
+		// 5. Build condition graph
+		if (Trans.Condition.Type == TEXT("bool_variable"))
+		{
+			UAnimationTransitionGraph* TransGraph = Cast<UAnimationTransitionGraph>(TransNode->GetBoundGraph());
+			if (!TransGraph)
+			{
+				return FString::Printf(TEXT("[ABPStateMachineBuilder] transition %d: no transition graph"), Index);
+			}
+
+			UAnimGraphNode_TransitionResult* ResultNode = TransGraph->MyResultNode;
+			if (!ResultNode)
+			{
+				return FString::Printf(TEXT("[ABPStateMachineBuilder] transition %d: no result node in transition graph"), Index);
+			}
+
+			// Find bCanEnterTransition input pin
+			UEdGraphPin* CanEnterPin = nullptr;
+			for (UEdGraphPin* Pin : ResultNode->Pins)
+			{
+				if (Pin->PinName == TEXT("bCanEnterTransition") && Pin->Direction == EGPD_Input)
+				{
+					CanEnterPin = Pin;
+					break;
+				}
+			}
+			if (!CanEnterPin)
+			{
+				return FString::Printf(TEXT("[ABPStateMachineBuilder] transition %d: no bCanEnterTransition pin on result node"), Index);
+			}
+
+			// Create variable get node for the bool variable
+			UK2Node_VariableGet* VarGet = NewObject<UK2Node_VariableGet>(TransGraph);
+			VarGet->VariableReference.SetSelfMember(FName(*Trans.Condition.Variable));
+			VarGet->CreateNewGuid();
+			VarGet->AllocateDefaultPins();
+			TransGraph->AddNode(VarGet, false, false);
+			VarGet->NodePosX = ResultNode->NodePosX - 300;
+			VarGet->NodePosY = ResultNode->NodePosY;
+
+			// Find bool output pin
+			UEdGraphPin* BoolOutput = nullptr;
+			for (UEdGraphPin* Pin : VarGet->Pins)
+			{
+				if (Pin->Direction == EGPD_Output && Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Boolean)
+				{
+					BoolOutput = Pin;
+					break;
+				}
+			}
+			if (!BoolOutput)
+			{
+				return FString::Printf(TEXT("[ABPStateMachineBuilder] transition %d: no bool output pin on variable get for '%s'"), Index, *Trans.Condition.Variable);
+			}
+
+			if (Trans.Condition.Value == TEXT("true"))
+			{
+				// Wire directly: VarGet bool -> CanEnterTransition
+				BoolOutput->MakeLinkTo(CanEnterPin);
+			}
+			else
+			{
+				// Insert NOT node between VarGet and CanEnterTransition
+				UK2Node_CallFunction* NotNode = NewObject<UK2Node_CallFunction>(TransGraph);
+				NotNode->CreateNewGuid();
+				NotNode->FunctionReference.SetExternalMember(
+					GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, Not_Bool),
+					UKismetMathLibrary::StaticClass());
+				NotNode->AllocateDefaultPins();
+				TransGraph->AddNode(NotNode, false, false);
+				NotNode->NodePosX = ResultNode->NodePosX - 150;
+				NotNode->NodePosY = ResultNode->NodePosY;
+
+				UEdGraphPin* NotInput = NotNode->FindPin(TEXT("A"));
+				UEdGraphPin* NotOutput = NotNode->GetReturnValuePin();
+				if (!NotInput || !NotOutput)
+				{
+					return FString::Printf(TEXT("[ABPStateMachineBuilder] transition %d: failed to find NOT node pins"), Index);
+				}
+
+				BoolOutput->MakeLinkTo(NotInput);
+				NotOutput->MakeLinkTo(CanEnterPin);
+			}
+		}
+		// time_remaining conditions handled in Task 9
+	}
+
+	return FString();
 }

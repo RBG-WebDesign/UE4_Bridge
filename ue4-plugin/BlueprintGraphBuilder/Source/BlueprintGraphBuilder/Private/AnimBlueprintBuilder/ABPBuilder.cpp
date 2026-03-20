@@ -80,7 +80,13 @@ FString FAnimBPBuilder::Build(
 		if (!StatesError.IsEmpty()) return StatesError;
 	}
 
-	// Steps 6+ will be added by later tasks (transitions, event graph)
+	// Step 5c: BUILD Transitions
+	{
+		FString TransError = FAnimBPStateMachineBuilder::BuildTransitions(Spec, BuildCtx);
+		if (!TransError.IsEmpty()) return TransError;
+	}
+
+	// Steps 6+ will be added by later tasks (event graph)
 
 	return FString();
 }
