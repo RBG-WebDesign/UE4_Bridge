@@ -9,6 +9,27 @@ description: >
 
 # UE4.27 Python API Reference
 
+## Live API Lookup via Context7
+
+When the quick reference below doesn't cover what you need, query the full UE4 Python API through Context7:
+
+```
+Tool: mcp__plugin_context7_context7__query-docs
+libraryId: /radial-hks/unreal-python-stubhub
+query: <class or method you need, e.g. "EditorAssetLibrary load_asset rename_asset">
+```
+
+This library has 57,781 snippets covering method signatures, class hierarchies, property types, and inheritance chains. Use it to:
+- Look up exact method signatures before writing a Python handler
+- Check class inheritance (e.g. does `AnimBlueprintGeneratedClass` extend `BlueprintGeneratedClass`?)
+- Find available properties on UE4 types
+- Verify parameter types and return values
+
+Fallback (official Epic docs, less reliable for 4.27):
+```
+libraryId: /websites/dev_epicgames_en-us_unreal-engine_python-api
+```
+
 ## Core Module
 All calls go through the `unreal` module, which is available globally inside the editor's Python environment.
 
