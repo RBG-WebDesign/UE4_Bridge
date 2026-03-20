@@ -96,12 +96,12 @@ test("all blueprint tools are registered", async () => {
   const expectedNames = [
     "blueprint_list", "blueprint_info", "blueprint_create",
     "blueprint_compile", "blueprint_document", "blueprint_build_from_json",
-    "blueprint_build_from_description",
+    "blueprint_build_from_description", "anim_blueprint_build_from_json",
   ];
   for (const name of expectedNames) {
     assert(toolMap.has(name), `Tool '${name}' should be registered`);
   }
-  assertEqual(blueprintTools.length, 7, "blueprint tool count");
+  assertEqual(blueprintTools.length, 8, "blueprint tool count");
 });
 
 // ---- material_list Tests ----
