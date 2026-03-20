@@ -4,6 +4,15 @@ mcp-server/dist/
 .DS_Store
 Thumbs.db
 
+# User-local
+.claude/settings.local.json
+.vscode/
+*.code-workspace
+
+# Python
+__pycache__/
+
+# Orchestrator output
 .worktrees/
 task-queue.md
 decisions.md

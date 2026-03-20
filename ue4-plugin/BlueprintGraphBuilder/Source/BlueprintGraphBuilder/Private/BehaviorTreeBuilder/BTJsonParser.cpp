@@ -96,7 +96,7 @@ static FString ParseNode(const TSharedPtr<FJsonObject>& NodeObj, FBTNodeSpec& Ou
 		}
 	}
 
-	// services (optional, parsed but ignored in MVP)
+	// services (optional)
 	const TArray<TSharedPtr<FJsonValue>>* ServicesArr = nullptr;
 	if (NodeObj->TryGetArrayField(TEXT("services"), ServicesArr))
 	{
@@ -105,10 +105,11 @@ static FString ParseNode(const TSharedPtr<FJsonObject>& NodeObj, FBTNodeSpec& Ou
 			const TSharedPtr<FJsonObject>* SvcObj = nullptr;
 			if (!(*ServicesArr)[i]->TryGetObject(SvcObj))
 			{
-				continue;  // services are best-effort in MVP
+				return FString::Printf(TEXT("[BTJsonParser] service %d is not an object at %s"), i, *NodePath);
 			}
 			FBTNodeSpec SvcSpec;
-			ParseNode(*SvcObj, SvcSpec, NodePath + TEXT("/services"));
+			FString SvcError = ParseNode(*SvcObj, SvcSpec, NodePath + TEXT("/services"));
+			if (!SvcError.IsEmpty()) return SvcError;
 			OutNode.Services.Add(MoveTemp(SvcSpec));
 		}
 	}

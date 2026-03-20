@@ -24,7 +24,7 @@ npx tsx mcp-server/tests/actor-tools.test.ts
 
 No linter is configured. No external test runner (no jest/mocha) -- tests use `tsx` to run TypeScript directly with a custom assert pattern. Unit tests live in `mcp-server/tests/` and use a mock HTTP server (`mock-server.ts`) that simulates UE4 responses -- no UE4 needed. Integration tests live in `mcp-server/tests/integration/` and hit the real UE4 listener.
 
-`npm test` chains three unit test files in sequence: `actor-tools.test.ts`, `level-viewport-tools.test.ts`, `material-blueprint-tools.test.ts`. If one fails, later files do not run.
+`npm test` chains four unit test files in sequence: `actor-tools.test.ts`, `level-viewport-tools.test.ts`, `material-blueprint-tools.test.ts`, `gameplay-tools.test.ts`. If one fails, later files do not run.
 
 The MCP server entry point is `mcp-server/dist/index.js` (ESM). Claude Code discovers it via `.mcp.json`. The workspace root `package.json` delegates all scripts to the `mcp-server` workspace.
 
@@ -80,7 +80,13 @@ A UE4.27 editor plugin (C++) that builds Blueprint event graphs, Widget Blueprin
 
 **Widget Blueprint Builder** (design spec complete, implementation not started) -- builds UMG Widget Blueprints from JSON. Lives under `Private/WidgetBuilder/` subdirectory. Exposes `UWidgetBlueprintBuilderLibrary` with `BuildWidgetFromJSON`, `RebuildWidgetFromJSON`, `ValidateWidgetJSON`. Spec: `docs/superpowers/specs/2026-03-18-widget-blueprint-builder-design.md`.
 
-**Behavior Tree Builder** (complete) -- builds BT node graphs from JSON with full blackboard support. Lives under `Private/BehaviorTreeBuilder/` subdirectory. Exposes `UBehaviorTreeBuilderLibrary::BuildBehaviorTreeFromJSON`. Supports 26 node types across composites, tasks, decorators, and services. Spec: `docs/superpowers/specs/2026-03-19-behavior-tree-builder-design.md`.
+**Behavior Tree Builder** (complete) -- builds BT node graphs from JSON with full blackboard support. Lives under `Private/BehaviorTreeBuilder/` subdirectory. Exposes `UBehaviorTreeBuilderLibrary::BuildBehaviorTreeFromJSON`. Supports 26 node types across 4 categories:
+- Composites: Selector, Sequence, SimpleParallel
+- Tasks: MoveTo, Wait, WaitBlackboardTime, RotateToFaceBBEntry, PlayAnimation, MakeNoise, RunBehavior, PlaySound, FinishWithResult, SetTagCooldown
+- Decorators: Blackboard (IsSet/IsNotSet + arithmetic: Equal/NotEqual/Less/LessOrEqual/Greater/GreaterOrEqual), ForceSuccess, Loop, TimeLimit, Cooldown, CompareBBEntries, IsAtLocation, DoesPathExist, TagCooldown, ConditionalLoop, KeepInCone, IsBBEntryOfClass
+- Services: DefaultFocus
+
+Blackboard key selectors are resolved via reflection (`ResolveSelectedKey`). Arithmetic conditions on the Blackboard decorator use `EArithmeticKeyOperation` for Int/Float keys, with `int_value`/`float_value` comparison params. Services attach to composite nodes via `UBTCompositeNode::Services`. Editor graph sync creates graph nodes for all categories including services. Spec: `docs/superpowers/specs/2026-03-19-behavior-tree-builder-design.md`.
 
 **Animation Blueprint Builder** (complete) -- builds Animation Blueprints from JSON targeting UE4's AnimGraph system. Lives under `Private/AnimBlueprintBuilder/` subdirectory. Exposes `UAnimBlueprintBuilderLibrary` with `BuildAnimBlueprintFromJSON`, `RebuildAnimBlueprintFromJSON`, `ValidateAnimBlueprintJSON`. v1 supports: bool variables, StateMachine + Slot pipeline, states with SequencePlayer, transitions with bool_variable and time_remaining conditions, event graph delegation to BlueprintGraphBuilder. Spec: `docs/superpowers/specs/2026-03-19-anim-blueprint-builder-design.md`.
 
@@ -92,11 +98,18 @@ The `blueprint_build_from_description` tool uses a pattern registry to translate
 
 ### Adding a New Tool
 1. Prototype using `python_proxy` first
-2. Add a Python handler in `unreal-plugin/Content/Python/mcp_bridge/handlers/`
-3. Register the command in `router.py`'s `COMMAND_ROUTES` dict (maps command string to handler function)
-4. Add the TypeScript tool definition in the matching `mcp-server/src/tools/` file
-5. If the tool modifies editor state, add it to the `modifyingCommands` set in `index.ts`
-6. Wrap editor mutations in a UE4 transaction using the `@transactional` decorator from `utils/transactions.py`
+2. Look up any `unreal` module APIs you need via Context7 before writing the handler:
+   ```
+   Tool: mcp__plugin_context7_context7__query-docs
+   libraryId: /radial-hks/unreal-python-stubhub
+   query: <class or method name>
+   ```
+   This has 57K+ snippets with exact signatures, class hierarchies, and property types. Use it to verify method names, parameter types, and return values rather than guessing.
+3. Add a Python handler in `unreal-plugin/Content/Python/mcp_bridge/handlers/`
+4. Register the command in `router.py`'s `COMMAND_ROUTES` dict (maps command string to handler function)
+5. Add the TypeScript tool definition in the matching `mcp-server/src/tools/` file
+6. If the tool modifies editor state, add it to the `modifyingCommands` set in `index.ts`
+7. Wrap editor mutations in a UE4 transaction using the `@transactional` decorator from `utils/transactions.py`
 
 ## Architecture Rules
 - The MCP server never imports or references Unreal modules. It only sends HTTP.
@@ -114,6 +127,40 @@ actor_snap_to_socket), use viewport_focus on the affected actor followed by
 viewport_screenshot to visually verify the result. For multi-actor operations, use
 viewport_fit followed by viewport_screenshot for an overview. This visual feedback
 loop is the default behavior, not an optional extra.
+
+## UE4.27 API Safety -- Forbidden UE5 Patterns
+
+**Engine target: Unreal Engine 4.27. If an API exists in UE5 but is not confirmed in UE4.27, do not use it. Fall back to known UE4.27 patterns.**
+
+Forbidden tokens and their UE4.27 replacements:
+
+| UE5 (FORBIDDEN) | UE4.27 (USE INSTEAD) | System |
+|---|---|---|
+| `EnhancedInputComponent` | `InputComponent` | Input |
+| `EnhancedInputSubsystem` | `BindAxis` / `BindAction` | Input |
+| `UE::Tasks` | `FAsyncTask` / `FTimerManager` | Async |
+| `Tasks::Launch` | `SetTimer` / `SetTimerForNextTick` | Async |
+| `MassAI` | `BehaviorTree` + `AIController` | AI |
+| `SmartObjects` | manual triggers / overlap volumes | AI |
+| `StateTree` | `BehaviorTree` | AI |
+| `AnimNext` | `UAnimInstance` / `Montage_Play` | Animation |
+| `LevelEditorSubsystem` | `GEditor` direct access | Editor |
+| `EditorUtilitySubsystem` | `FKismetEditorUtilities` | Editor |
+| `EditorPlaySessionSubsystem` | `GEditor->RequestPlaySession` | Play |
+
+When writing or reviewing C++ for this project, scan for any token in the FORBIDDEN column. If found, replace with the UE4.27 equivalent before compiling.
+
+**Camera shake API for UE4.27.2:** This engine version uses the UE5-transitional API: `UCameraShakeBase` (header: `Camera/CameraShakeBase.h`), `StartCameraShake()` on `APlayerCameraManager`. The older `UCameraShake` / `PlayCameraShake` names do not exist in this build.
+
+## Trigger Volume Placement Rules
+When spawning any overlap-based trigger actor (ShakeTriggerActor, kill volumes, pickup zones, etc.):
+
+1. **Never place a trigger volume on top of the PlayerStart.** `OnBeginOverlap` only fires on state transition (outside -> inside). If the player spawns already inside the volume, the event never fires.
+2. **Minimum clearance:** Place trigger volumes at least 1.5x the volume's extent away from any PlayerStart location.
+3. **Verify before spawning:** Query the PlayerStart location and compare against the planned trigger position + extent. Reject or warn if they overlap.
+4. **Test pattern:** After spawning a trigger, start PIE and walk the player into the volume. Check Output Log for the actor's log messages. Do not assume placement is correct without runtime verification.
+
+These rules apply to all tools that spawn overlap-based actors: `camera_shake_trigger`, and any future trigger/zone tools.
 
 ## Code Standards
 - TypeScript: strict mode, explicit types, no `any`
@@ -135,6 +182,30 @@ Multiple agents may work on this repo concurrently. Each workstream has its own 
 | Animation Blueprint Builder | `ue4-plugin/BlueprintGraphBuilder/Private/AnimBlueprintBuilder/` | Complete (v1) | `docs/superpowers/specs/2026-03-19-anim-blueprint-builder-design.md` |
 
 ShaderWeave is a separate product that shares the UE_Bridge listener. It uses `/shaderweave/v1/*` URL paths, not the `POST /` command router. Do not mix ShaderWeave handlers into `handlers/` or ShaderWeave routes into `router.py`. Note: `listener.py` requires minimal path-routing changes for ShaderWeave (see ShaderWeave spec for details).
+
+## Agents and Skills (`.claude/`)
+
+### Research Agents (`.claude/agents/`)
+Dispatch these for codebase questions instead of guessing. They search actual files and return answers with paths and line numbers.
+
+| Agent | Purpose |
+|---|---|
+| `project-researcher` | Generalist -- searches codebase, specs, plans, code patterns |
+| `ue4-cpp-expert` | UE4.27 C++ APIs, class hierarchies, plugin patterns, node graph internals |
+| `bridge-architecture` | Cross-layer data flow (TS -> Python -> C++), HTTP protocol, tool registration |
+| `spec-and-plan-reader` | Design specs, implementation plans, workstream status, JSON schemas |
+| `orchestrator` | Coordinates multi-agent work, delegates to specialists, verifies builds/tests |
+
+### Skills (`.claude/skills/`)
+
+| Skill | Purpose |
+|---|---|
+| `deep-research` | Routing hints for dispatching questions to the right research agent |
+| `project-context` | Quick-reference card: architecture, file ownership, workstreams, C++ plugin pattern |
+| `bridge-http-protocol` | Request/response contract between TS MCP server and Python listener |
+| `mcp-tool-pattern` | Step-by-step template for adding a new MCP tool |
+| `ue4-transaction-system` | Undo/redo transaction scope rules |
+| `unreal-python-api` | UE4.27 Python API reference (includes Context7 live lookup with 57K+ snippets) |
 
 ## File Ownership
 - `mcp-server/` is TypeScript only

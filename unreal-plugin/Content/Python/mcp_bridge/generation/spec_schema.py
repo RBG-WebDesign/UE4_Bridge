@@ -119,8 +119,22 @@ class BehaviorTreeSpec:
     blackboard_path: str             # content path to associated Blackboard asset
     # Root node as nested dict tree matching the BehaviorTreeBuilder JSON schema.
     root: Dict[str, Any] = field(default_factory=dict)
-    # Each node: {"id": str, "type": "Selector"|"Sequence"|"MoveTo"|"Wait"|"Blackboard",
-    #  "name": str (optional), "params": {...}, "children": [...], "decorators": [...]}
+    # Each node: {"id": str, "type": str, "name": str (optional),
+    #  "params": {...}, "children": [...], "decorators": [...], "services": [...]}
+    # Composites: Selector, Sequence, SimpleParallel
+    # Tasks: MoveTo, Wait, WaitBlackboardTime, RotateToFaceBBEntry, PlayAnimation,
+    #        MakeNoise, RunBehavior, PlaySound (sound_to_play),
+    #        FinishWithResult (result: Succeeded/Failed/Aborted),
+    #        SetTagCooldown (cooldown_tag, cooldown_duration, add_to_existing)
+    # Decorators: Blackboard (IsSet/IsNotSet/Equal/NotEqual/Less/LessOrEqual/Greater/
+    #             GreaterOrEqual), ForceSuccess, Loop, TimeLimit, Cooldown, CompareBBEntries,
+    #             IsAtLocation (blackboard_key, acceptable_radius, inverse_condition),
+    #             DoesPathExist (blackboard_key_a, blackboard_key_b, path_query_type),
+    #             TagCooldown (cooldown_tag, cool_down_time, add_to_existing),
+    #             ConditionalLoop (same params as Blackboard),
+    #             KeepInCone (cone_half_angle, cone_origin, observed),
+    #             IsBBEntryOfClass (blackboard_key, test_class)
+    # Services: DefaultFocus
 
 
 @dataclass

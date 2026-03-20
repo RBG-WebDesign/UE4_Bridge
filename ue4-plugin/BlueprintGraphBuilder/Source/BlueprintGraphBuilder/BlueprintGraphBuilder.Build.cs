@@ -32,6 +32,7 @@ public class BlueprintGraphBuilder : ModuleRules
             "GameplayTasks",
             "AnimGraph",
             "AnimGraphRuntime",
+            "GameplayTags",
         });
 
         if (Target.bBuildEditor)

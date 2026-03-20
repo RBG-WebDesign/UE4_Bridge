@@ -1,5 +1,9 @@
 """enemy_patrol mechanic -- adds enemy character, AI controller, blackboard, behavior tree,
 and red material to a BuildSpec.
+
+The BT builder supports expanded node types beyond what this mechanic uses:
+Tasks: PlaySound, FinishWithResult, SetTagCooldown
+Decorators: IsAtLocation, DoesPathExist, TagCooldown, ConditionalLoop, KeepInCone, IsBBEntryOfClass
 """
 from __future__ import annotations
 
@@ -65,7 +69,10 @@ def apply_enemy_patrol(intent: IntentMap, spec: BuildSpec) -> BuildSpec:
     )
     spec.blackboards.append(blackboard)
 
-    # Behavior Tree with Selector root and two Sequences (MoveTo + Wait).
+    # Behavior Tree: Selector root with three branches.
+    # 1. High alert chase (AlertLevel >= 0.5, with DefaultFocus service)
+    # 2. Investigate (target set but low alert, with cooldown)
+    # 3. Patrol loop (no target, looping patrol points)
     behavior_tree = BehaviorTreeSpec(
         name=f"BT_{intent.feature_name}_Enemy",
         content_path=ai_path,
@@ -75,6 +82,7 @@ def apply_enemy_patrol(intent: IntentMap, spec: BuildSpec) -> BuildSpec:
             "type": "Selector",
             "name": "EnemyBehavior",
             "children": [
+                # Branch 1: High-alert chase -- uses arithmetic condition + service
                 {
                     "id": "chase_sequence",
                     "type": "Sequence",
@@ -89,8 +97,36 @@ def apply_enemy_patrol(intent: IntentMap, spec: BuildSpec) -> BuildSpec:
                                 "condition": "IsSet",
                             },
                         },
+                        {
+                            "id": "high_alert",
+                            "type": "Blackboard",
+                            "name": "HighAlert",
+                            "params": {
+                                "blackboard_key": "AlertLevel",
+                                "condition": "GreaterOrEqual",
+                                "float_value": 0.5,
+                            },
+                        },
+                    ],
+                    "services": [
+                        {
+                            "id": "focus_target",
+                            "type": "DefaultFocus",
+                            "name": "FocusOnTarget",
+                            "params": {
+                                "blackboard_key": "TargetActor",
+                            },
+                        },
                     ],
                     "children": [
+                        {
+                            "id": "rotate_to_target",
+                            "type": "RotateToFaceBBEntry",
+                            "name": "FaceTarget",
+                            "params": {
+                                "blackboard_key": "TargetActor",
+                            },
+                        },
                         {
                             "id": "move_to_target",
                             "type": "MoveTo",
@@ -102,6 +138,62 @@ def apply_enemy_patrol(intent: IntentMap, spec: BuildSpec) -> BuildSpec:
                         },
                     ],
                 },
+                # Branch 2: Investigate -- target set but low alert, with cooldown
+                {
+                    "id": "investigate_sequence",
+                    "type": "Sequence",
+                    "name": "Investigate",
+                    "decorators": [
+                        {
+                            "id": "has_target_investigate",
+                            "type": "Blackboard",
+                            "name": "HasTargetInvestigate",
+                            "params": {
+                                "blackboard_key": "TargetActor",
+                                "condition": "IsSet",
+                            },
+                        },
+                        {
+                            "id": "low_alert",
+                            "type": "Blackboard",
+                            "name": "LowAlert",
+                            "params": {
+                                "blackboard_key": "AlertLevel",
+                                "condition": "Less",
+                                "float_value": 0.5,
+                            },
+                        },
+                        {
+                            "id": "investigate_cooldown",
+                            "type": "Cooldown",
+                            "name": "InvestigateCooldown",
+                            "params": {
+                                "cool_down_time": 3.0,
+                            },
+                        },
+                    ],
+                    "children": [
+                        {
+                            "id": "move_to_investigate",
+                            "type": "MoveTo",
+                            "name": "ApproachTarget",
+                            "params": {
+                                "blackboard_key": "TargetActor",
+                                "acceptable_radius": 200.0,
+                            },
+                        },
+                        {
+                            "id": "investigate_wait",
+                            "type": "Wait",
+                            "name": "LookAround",
+                            "params": {
+                                "wait_time": 3.0,
+                                "random_deviation": 1.0,
+                            },
+                        },
+                    ],
+                },
+                # Branch 3: Patrol loop -- no target, loops forever
                 {
                     "id": "patrol_sequence",
                     "type": "Sequence",
@@ -114,6 +206,14 @@ def apply_enemy_patrol(intent: IntentMap, spec: BuildSpec) -> BuildSpec:
                             "params": {
                                 "blackboard_key": "TargetActor",
                                 "condition": "IsNotSet",
+                            },
+                        },
+                        {
+                            "id": "patrol_loop",
+                            "type": "Loop",
+                            "name": "LoopForever",
+                            "params": {
+                                "infinite_loop": "true",
                             },
                         },
                     ],

@@ -15,7 +15,7 @@ struct FBTNodeSpec
 	TMap<FString, FString> Params;
 	TArray<FBTNodeSpec> Children;
 	TArray<FBTNodeSpec> Decorators;
-	TArray<FBTNodeSpec> Services;  // parsed, ignored in MVP
+	TArray<FBTNodeSpec> Services;
 };
 
 struct FBTBuildSpec

@@ -5,6 +5,7 @@
 #include "BehaviorTree/BTCompositeNode.h"
 #include "BehaviorTree/BTTaskNode.h"
 #include "BehaviorTree/BTDecorator.h"
+#include "BehaviorTree/BTService.h"
 
 // Phase A: Recursively create all nodes
 static FString CreateNodes(
@@ -28,6 +29,11 @@ static FString CreateNodes(
 	{
 		TSubclassOf<UBTDecorator> NodeClass = Registry->GetDecoratorClass(Spec.Type);
 		Node = NewObject<UBTDecorator>(Ctx.BehaviorTree, NodeClass);
+	}
+	else if (Registry->IsService(Spec.Type))
+	{
+		TSubclassOf<UBTService> NodeClass = Registry->GetServiceClass(Spec.Type);
+		Node = NewObject<UBTService>(Ctx.BehaviorTree, NodeClass);
 	}
 
 	if (!Node)
@@ -64,6 +70,13 @@ static FString CreateNodes(
 		if (!Error.IsEmpty()) return Error;
 	}
 
+	// Recurse into services
+	for (const FBTNodeSpec& SvcSpec : Spec.Services)
+	{
+		FString Error = CreateNodes(SvcSpec, Ctx);
+		if (!Error.IsEmpty()) return Error;
+	}
+
 	return FString();
 }
 
@@ -81,8 +94,22 @@ static FString WireNodes(
 	UBTCompositeNode* Composite = Cast<UBTCompositeNode>(*FoundNode);
 	if (!Composite)
 	{
-		// Task or decorator -- nothing to wire from here (children were validated away)
+		// Task or decorator or service -- nothing to wire from here
 		return FString();
+	}
+
+	// Wire services onto the composite
+	for (const FBTNodeSpec& SvcSpec : Spec.Services)
+	{
+		UBTNode** SvcFound = Ctx.NodeMap.Find(SvcSpec.Id);
+		if (SvcFound && *SvcFound)
+		{
+			UBTService* Svc = Cast<UBTService>(*SvcFound);
+			if (Svc)
+			{
+				Composite->Services.Add(Svc);
+			}
+		}
 	}
 
 	// Wire each child into the composite

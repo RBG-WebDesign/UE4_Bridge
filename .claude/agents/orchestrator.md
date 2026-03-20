@@ -14,8 +14,15 @@ and passes tests before reporting done.
 | **integration-test** | Test scripts | New unit tests, mock server updates, integration test scenarios |
 | **documentation** | `docs/`, `README.md` | Tool reference updates, setup guide changes, troubleshooting |
 
+## Research Agents
+Dispatch these for questions before guessing:
+- **ue4-cpp-expert** -- UE4.27 C++ APIs, class hierarchies, plugin patterns, node graph internals
+- **bridge-architecture** -- cross-layer data flow, HTTP protocol, tool registration, file ownership
+- **spec-and-plan-reader** -- design specs, implementation plans, workstream status, JSON schemas
+
 ## Skills Available
 Load these for reference when needed:
+- `project-context` -- quick-reference overview of architecture and workstreams
 - `bridge-http-protocol` -- request/response contract between TS and Python
 - `mcp-tool-pattern` -- step-by-step template for adding a new tool
 - `ue4-transaction-system` -- undo/redo transaction scope rules

@@ -6,6 +6,7 @@
 #include "BehaviorTree/BTCompositeNode.h"
 #include "BehaviorTree/BTTaskNode.h"
 #include "BehaviorTree/BTDecorator.h"
+#include "BehaviorTree/BTService.h"
 #include "AIGraphNode.h"
 #include "BehaviorTreeGraphNode_Composite.h"
 #include "EdGraph/EdGraph.h"
@@ -25,6 +26,12 @@ static UClass* GetBTGraphNodeClass_Task()
 static UClass* GetBTGraphNodeClass_Decorator()
 {
 	static UClass* Cls = FindObject<UClass>(ANY_PACKAGE, TEXT("BehaviorTreeGraphNode_Decorator"));
+	return Cls;
+}
+
+static UClass* GetBTGraphNodeClass_Service()
+{
+	static UClass* Cls = FindObject<UClass>(ANY_PACKAGE, TEXT("BehaviorTreeGraphNode_Service"));
 	return Cls;
 }
 
@@ -65,6 +72,14 @@ static UAIGraphNode* CreateGraphNodeForRuntime(UBTNode* RuntimeNode, UEdGraph* B
 			GraphNode = Cast<UAIGraphNode>(NewObject<UObject>(BTGraph, DecNodeClass));
 		}
 	}
+	else if (Cast<UBTService>(RuntimeNode))
+	{
+		UClass* SvcNodeClass = GetBTGraphNodeClass_Service();
+		if (SvcNodeClass)
+		{
+			GraphNode = Cast<UAIGraphNode>(NewObject<UObject>(BTGraph, SvcNodeClass));
+		}
+	}
 
 	if (GraphNode)
 	{
@@ -82,6 +97,17 @@ static void SyncComposite(
 	UEdGraph* BTGraph)
 {
 	if (!Composite || !ParentGraphNode) return;
+
+	// Add services as sub-nodes of the composite graph node
+	for (UBTService* Svc : Composite->Services)
+	{
+		if (!Svc) continue;
+		UAIGraphNode* SvcGraphNode = CreateGraphNodeForRuntime(Svc, BTGraph);
+		if (SvcGraphNode)
+		{
+			ParentGraphNode->AddSubNode(SvcGraphNode, BTGraph);
+		}
+	}
 
 	for (const FBTCompositeChild& Child : Composite->Children)
 	{
