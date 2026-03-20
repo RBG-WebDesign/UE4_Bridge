@@ -1,0 +1,91 @@
+{
+  "variables": [
+    {"name": "IsMoving", "type": "bool", "default": "false"},
+    {"name": "bIsInAir", "type": "bool", "default": "false"}
+  ],
+  "anim_graph": {
+    "pipeline": [
+      {"id": "sm1", "type": "StateMachine", "name": "LocomotionSM"},
+      {"id": "slot1", "type": "Slot", "name": "Arms"}
+    ]
+  },
+  "state_machine": {
+    "states": [
+      {
+        "id": "idle",
+        "name": "FPP_Idle",
+        "animation": "/Game/FirstPerson/Animations/FirstPerson_Idle",
+        "looping": true,
+        "is_entry": true
+      },
+      {
+        "id": "run",
+        "name": "FPP_Run",
+        "animation": "/Game/FirstPerson/Animations/FirstPerson_Run",
+        "looping": true
+      },
+      {
+        "id": "jump_start",
+        "name": "FPP_JumpStart",
+        "animation": "/Game/FirstPerson/Animations/FirstPerson_JumpStart",
+        "looping": false
+      },
+      {
+        "id": "jump_loop",
+        "name": "FPP_JumpLoop",
+        "animation": "/Game/FirstPerson/Animations/FirstPerson_JumpLoop",
+        "looping": true
+      },
+      {
+        "id": "jump_end",
+        "name": "FPP_JumpEnd",
+        "animation": "/Game/FirstPerson/Animations/FirstPerson_JumpEnd",
+        "looping": false
+      }
+    ],
+    "transitions": [
+      {
+        "from": "idle",
+        "to": "run",
+        "blend_time": 0.2,
+        "condition": {"type": "bool_variable", "variable": "IsMoving", "value": true}
+      },
+      {
+        "from": "run",
+        "to": "idle",
+        "blend_time": 0.2,
+        "condition": {"type": "bool_variable", "variable": "IsMoving", "value": false}
+      },
+      {
+        "from": "idle",
+        "to": "jump_start",
+        "blend_time": 0.2,
+        "condition": {"type": "bool_variable", "variable": "bIsInAir", "value": true}
+      },
+      {
+        "from": "run",
+        "to": "jump_start",
+        "blend_time": 0.2,
+        "condition": {"type": "bool_variable", "variable": "bIsInAir", "value": true}
+      },
+      {
+        "from": "jump_start",
+        "to": "jump_loop",
+        "blend_time": 0.1,
+        "condition": {"type": "time_remaining", "threshold": 0.1}
+      },
+      {
+        "from": "jump_loop",
+        "to": "jump_end",
+        "blend_time": 0.1,
+        "condition": {"type": "bool_variable", "variable": "bIsInAir", "value": false}
+      },
+      {
+        "from": "jump_end",
+        "to": "idle",
+        "blend_time": 0.1,
+        "condition": {"type": "time_remaining", "threshold": 0.1}
+      }
+    ]
+  }
+}
