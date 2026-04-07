@@ -4,6 +4,13 @@
       "command": "node",
       "args": ["mcp-server/dist/index.js"],
       "cwd": "."
+    },
+    "unreal-api": {
+      "command": "uvx",
+      "args": ["unreal-api-mcp"],
+      "env": {
+        "UNREAL_VERSION": "4.27"
+      }
     }
   }
 }

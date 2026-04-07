@@ -51,6 +51,12 @@ ShaderWeave (web app, future) --HTTP /shaderweave/v1/*:8080--> Python Listener (
 
 `index.ts` collects all tool arrays, builds a lookup map, and tracks which commands are "modifying" (recorded in history for undo). Modifying commands: actor_spawn, actor_modify, actor_delete, actor_duplicate, actor_organize, actor_snap_to_socket, batch_spawn, material_create, material_apply, blueprint_create, blueprint_compile, blueprint_build_from_json, anim_blueprint_build_from_json, level_save.
 
+The `tools/` directory has 11 files:
+- `actors.ts`, `blueprints.ts`, `level.ts`, `materials.ts`, `operations.ts`, `project.ts`, `system.ts`, `viewport.ts` -- core tools
+- `effects.ts` -- post-processing volumes, camera shakes (spawn/play/trigger), visual effects
+- `promptbrush.ts` -- PromptBrush tools: `prompt_generate`, `prompt_status`, `prompt_spec_list`, `widget_build_from_json`
+- `gameplay.ts` -- PIE start/stop, acceptance tests, telemetry
+
 ### Python Listener (`unreal-plugin/Content/Python/mcp_bridge/`)
 - `listener.py` -- HTTP server on background thread, queues commands to game thread via `register_slate_post_tick_callback`
 - `router.py` -- dispatches commands to handlers
@@ -90,6 +96,9 @@ Blackboard key selectors are resolved via reflection (`ResolveSelectedKey`). Ari
 
 **Animation Blueprint Builder** (complete) -- builds Animation Blueprints from JSON targeting UE4's AnimGraph system. Lives under `Private/AnimBlueprintBuilder/` subdirectory. Exposes `UAnimBlueprintBuilderLibrary` with `BuildAnimBlueprintFromJSON`, `RebuildAnimBlueprintFromJSON`, `ValidateAnimBlueprintJSON`. v1 supports: bool variables, StateMachine + Slot pipeline, states with SequencePlayer, transitions with bool_variable and time_remaining conditions, event graph delegation to BlueprintGraphBuilder. Spec: `docs/superpowers/specs/2026-03-19-anim-blueprint-builder-design.md`.
 
+### PromptBrush (`promptbrush.ts` + external plugin)
+Generates complete UE4.27 gameplay systems from a single natural language prompt. Creates Blueprint classes, Widget Blueprints, materials, data assets, maps, and input mappings in one pass. Exposed as `prompt_generate`, `prompt_status`, `prompt_spec_list` MCP tools. The UE4 side is a separate C++ plugin (`PromptBrush`) that lives outside this repo at `D:\Unreal Projects\CodePlayground\Plugins\PromptBrush\`. The plugin must be copied into the target project's `Plugins/` folder and enabled before `prompt_generate` will work. See `README_PROMPTBRUSH.md` for setup.
+
 ### ShaderWeave Bridge (`unreal-plugin/Content/Python/mcp_bridge/shaderweave/`)
 A separate product that shares the UE_Bridge HTTP listener. Pushes HLSL into Material Custom Expression nodes and returns compile feedback. Uses its own URL namespace (`/shaderweave/v1/*`) separate from the existing `POST /` command router. ShaderWeave is its own repo/product -- UE_Bridge only hosts the transport and UE4 execution layer. Spec: `docs/superpowers/specs/2026-03-18-shaderweave-bridge-mvp-design.md`.
 
@@ -110,6 +119,28 @@ The `blueprint_build_from_description` tool uses a pattern registry to translate
 5. Add the TypeScript tool definition in the matching `mcp-server/src/tools/` file
 6. If the tool modifies editor state, add it to the `modifyingCommands` set in `index.ts`
 7. Wrap editor mutations in a UE4 transaction using the `@transactional` decorator from `utils/transactions.py`
+
+## UE4.27 C++ API Lookup (unreal-api MCP)
+
+A second MCP server (`unreal-api`) runs alongside `unreal-bridge` and serves UE4.27 C++ API documentation from a SQLite database. Use it to verify C++ API usage instead of guessing.
+
+| When | Tool | Example |
+|------|------|---------|
+| Unsure about a function's parameters or return type | `search_unreal_api` or `get_function_signature` | `get_function_signature("AActor::GetActorLocation")` |
+| Need the `#include` for a type | `get_include_path` | `get_include_path("ACharacter")` |
+| Want to see all members on a class | `get_class_reference` | `get_class_reference("UBTCompositeNode")` |
+| Searching for an API by keyword | `search_unreal_api` | `search_unreal_api("spawn actor")` |
+| Checking if an API is deprecated | `get_deprecation_warnings` | `get_deprecation_warnings("K2_AttachRootComponentTo")` |
+
+**Rules:**
+- Before writing a UE C++ API call you haven't verified in this conversation, check it with `get_function_signature`
+- Before adding a `#include`, verify with `get_include_path` if unsure
+- Covers: all Engine Runtime/Editor/Developer modules, built-in plugins, Blueprint graph internals (UK2Node subclasses, EdGraphSchema, KismetCompiler)
+- Does NOT cover: third-party plugins or marketplace assets
+
+**Two API lookup systems are available -- use the right one:**
+- **unreal-api MCP** (`search_unreal_api`, `get_function_signature`, etc.) -- for **C++ API**: class hierarchies, function signatures, `#include` paths, deprecation. Use when writing C++ in `ue4-plugin/`.
+- **Context7 StubHub** (`mcp__plugin_context7_context7__query-docs` with `/radial-hks/unreal-python-stubhub`) -- for **Python API**: `unreal` module method signatures, property types, Python class wrappers. Use when writing Python handlers in `unreal-plugin/`.
 
 ## Architecture Rules
 - The MCP server never imports or references Unreal modules. It only sends HTTP.
@@ -170,6 +201,11 @@ These rules apply to all tools that spawn overlap-based actors: `camera_shake_tr
 - No academic filler language (delve, explore, leverage, robust, utilize)
 - Write documentation like you're explaining to a programmer, not selling to a VP
 
+### Orchestrator (`orchestrator.mjs`)
+A Node.js script at the repo root that coordinates multi-agent task batches. It reads/writes `decisions.md` (structured log of orchestrator sessions and agent findings) and `task-queue.md` (active/pending/completed task tracking). These two files are orchestrator output -- do not hand-edit them. Run via `node orchestrator.mjs` when coordinating parallel agent work.
+
+The root `agents/` and `skills/` directories contain scenario prompt templates (e.g., `build_blueprint_graph_from_schema.md`, `create_map_and_place_actors.md`) used by the orchestrator and PromptBrush to generate structured build specs. These are distinct from the research agents in `.claude/agents/`.
+
 ## Active Workstreams
 Multiple agents may work on this repo concurrently. Each workstream has its own spec and plan docs.
 
@@ -180,6 +216,7 @@ Multiple agents may work on this repo concurrently. Each workstream has its own 
 | ShaderWeave Bridge | `unreal-plugin/Content/Python/mcp_bridge/shaderweave/` | Design complete | `docs/superpowers/specs/2026-03-18-shaderweave-bridge-mvp-design.md` |
 | Behavior Tree Builder | `ue4-plugin/BlueprintGraphBuilder/Private/BehaviorTreeBuilder/` | Complete (26 node types) | `docs/superpowers/specs/2026-03-19-behavior-tree-builder-design.md` |
 | Animation Blueprint Builder | `ue4-plugin/BlueprintGraphBuilder/Private/AnimBlueprintBuilder/` | Complete (v1) | `docs/superpowers/specs/2026-03-19-anim-blueprint-builder-design.md` |
+| PromptBrush | External plugin + `mcp-server/src/tools/promptbrush.ts` | Active | `README_PROMPTBRUSH.md` |
 
 ShaderWeave is a separate product that shares the UE_Bridge listener. It uses `/shaderweave/v1/*` URL paths, not the `POST /` command router. Do not mix ShaderWeave handlers into `handlers/` or ShaderWeave routes into `router.py`. Note: `listener.py` requires minimal path-routing changes for ShaderWeave (see ShaderWeave spec for details).
 
@@ -195,6 +232,11 @@ Dispatch these for codebase questions instead of guessing. They search actual fi
 | `bridge-architecture` | Cross-layer data flow (TS -> Python -> C++), HTTP protocol, tool registration |
 | `spec-and-plan-reader` | Design specs, implementation plans, workstream status, JSON schemas |
 | `orchestrator` | Coordinates multi-agent work, delegates to specialists, verifies builds/tests |
+| `documentation` | Reads and summarizes docs, READMEs, and inline comments |
+| `integration-test` | Runs and interprets integration tests against a live UE4 instance |
+| `mcp-server` | MCP server internals: tool registration, Zod schemas, transport layer |
+| `unreal-python` | Python handler patterns, UE4 Python API, threading, routing |
+| `validation-safety` | Reviews code for UE4.27 API safety, forbidden UE5 tokens, transaction correctness |
 
 ### Skills (`.claude/skills/`)
 
