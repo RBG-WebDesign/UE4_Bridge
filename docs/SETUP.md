@@ -6,6 +6,20 @@
 - npm 9 or later
 - A UE4 project with the Python Editor Script Plugin enabled
 
+## Recommended Install
+Use the installer for new projects and updates:
+
+```powershell
+.\Scripts\install-mcp-bridge.ps1 "D:\Unreal Projects\MyGame\MyGame.uproject"
+```
+
+The installer builds the MCP server, copies the Unreal-side Python listener, copies the BlueprintGraphBuilder plugin, updates `DefaultEngine.ini`, and writes a project-local `.mcp.json`.
+
+For update details and options, see `docs/MCP_BRIDGE_INSTALLER.md`.
+
+## Manual Install
+Use these steps only when you need to copy files by hand.
+
 ## Step 1: Enable Python in UE4
 1. Open your UE4 project in the editor
 2. Go to Edit > Plugins

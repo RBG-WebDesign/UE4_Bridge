@@ -41,6 +41,14 @@ Optional, depending on the workflow:
 
 From this repository root:
 
+```powershell
+.\Scripts\install-mcp-bridge.ps1 "D:\Unreal Projects\MyGame\MyGame.uproject"
+```
+
+The installer builds the MCP server, installs the Unreal-side Python listener, installs the BlueprintGraphBuilder plugin, patches `DefaultEngine.ini`, and writes `.mcp.json` into the target project. Rerun the same command later to update that project. See `docs/MCP_BRIDGE_INSTALLER.md` for options like `-CleanManaged`, `-SkipBuild`, and `-SkipCppPlugin`.
+
+Manual server build:
+
 ```bash
 npm install
 npm run build
@@ -127,7 +135,8 @@ Add this to your project `Config/DefaultEngine.ini`:
 [/Script/PythonScriptPlugin.PythonScriptPluginSettings]
 bDeveloperMode=True
 bRemoteExecution=True
-StartupScripts=/Game/Python/startup.py
++StartupScripts=/Game/Python/startup.py
++AdditionalPaths=(Path="/Game/Python")
 ```
 
 There is also an example file here:
