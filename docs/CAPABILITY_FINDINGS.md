@@ -1285,6 +1285,83 @@ went through save-as, never load/create, after the second crash.
 editor already has open, and use `puerts_save level_path=...` to move it to a
 new package path when needed.
 
+### 2026-08-07: ACCEPTANCE PASSED. `level_load` is out of quarantine.
+
+`L13 -> L17 -> L11 -> L13`, five complete cycles, **15 transitions, 16 loads
+including the setup load**. Editor pid 19908, session
+`af669f02-463e-4397-d88c-c693e71eb3ab`, unchanged throughout.
+
+| Check | Result |
+|---|---|
+| editor crashes | **0**. Same pid alive at the end; no new folder under `Saved/Crashes` |
+| `EXCEPTION_ACCESS_VIOLATION` | **0** in the log |
+| stale binding / dangling UObject errors | **0** |
+| loads completed | 16 of 16, each with a `MCPBridge deferred level load complete:` line naming the map |
+| map identity after each | correct every time, read from `active_level` on the next call and from `puerts_scene_inspect` at the ends |
+| bridge reconnect | never needed. The session never dropped, so the manifest republish is belt-and-braces rather than load-bearing |
+| project identity | `Sinfeld_240301` on every response |
+| PIE after 15 transitions | start and stop both fine; `BP_SFGameMode_Exploration_C` possessed with `WBP_Canon_HUD_Donathan_C` up |
+
+Command latency confirms the mechanism: `level_load` returns in **3 to 6 ms**
+with `scheduled: true`, versus a load that takes seconds. The call is no longer
+inside the teardown.
+
+Two observations that are not failures:
+
+1. **The pipe times out on the first command issued during a load.** `LoadMap`
+   holds the game thread, so the pipe is not serviced until it finishes, and the
+   editor then writes to a client that has already given up:
+   `Puerts: Error: MCP pipe socket error: write EPIPE`. Harmless, and inherent to
+   a blocking load rather than to this change. Callers should wait before
+   polling; roughly 14 s covered a 7,641-actor map here.
+2. The asynchronous `FTickFunctionTask::DoTask` crash site never reappeared
+   across 15 transitions. That is evidence it shared the root cause, not proof.
+
+`level_create` remains quarantined. It loads the map it creates through its own
+path and was not touched or tested by this work.
+
+### 2026-08-06: fix written and compiled, ACCEPTANCE NOT YET RUN
+
+`LoadLevelJson` no longer calls `UEditorLoadingAndSavingUtils::LoadMap` inside
+the PuerTS call stack. It validates, records the request in plain `FString`
+state, registers a one-shot `FTicker` at delay 0, and returns. `LoadMap` then
+runs on the next game-thread tick with V8 unwound. The ticker re-derives the
+active world name from `GEditor` rather than trusting the returned pointer,
+republishes the session manifest so a client polling across the transition does
+not read the editor as dead, and is removed in the service shutdown path so a
+scheduled load cannot fire into a service that is going away.
+
+Deliberately NOT a job: `MCPPuerTSBridgeJobs.cpp` states that work holding the
+game thread cannot be a job, and `LoadMap` holds it. The command returns
+`scheduled: true`, and the caller confirms with `puerts_scene_inspect` or by
+calling `level_load` again for the same path.
+
+State as of this entry:
+
+| | |
+|---|---|
+| `npm run verify` | passes, including the schema budget and the two-sided quarantine test |
+| target editor build | 42/42 compiled, `install matches the repository` |
+| quarantine | **lifted in code, pending acceptance** |
+| acceptance | **NOT RUN.** Needs an editor relaunch and an MCP session restart, because the server registers its tool list at startup |
+
+Required acceptance before this may be called fixed: `L13 -> L17 -> L11 -> L13`,
+five complete cycles, 15 transitions. After each: active map path correct,
+editor alive, `puerts_diagnostic` succeeds, same project, no stale binding or
+UObject errors. Then one PIE start/stop. **If any transition crashes, restore
+the `level_load` entry in `puerts-runtime/src/registry.ts` `quarantinedTools`
+and in `mcp-server/src/tools/puerts.ts` `QUARANTINED_TOOLS` verbatim from git
+history, and record the crash site here.**
+
+`level_create` is untouched and stays quarantined: it loads the map it creates
+through its own path, which this fix does not cover.
+
+Second crash site, stated honestly: the synchronous site is pinned by the stack
+trace and is what this change addresses. The asynchronous
+`FTickFunctionTask::DoTask` site is *consistent with* the same cause but was not
+independently reproduced or instrumented. Five cycles rather than one load exist
+precisely because a single successful transition would not test it.
+
 **QUARANTINED 2026-08-05, at three boundaries.** The workaround above was a
 sentence in a document, which is not a boundary: the tools stayed in
 `tools/list`, so the next session would pick one and crash the editor again.

@@ -1876,6 +1876,23 @@ const specs = [
   ["puerts_physics_observe", "physics_observe", "Read rigid-body transforms and velocities from the editor or PIE world.", z.object({ actors: z.array(z.string()).max(200).optional() }).strict()],
   ["puerts_viewport_screenshot", "viewport_screenshot", "Fit requested actors and save a PNG of the active editor viewport.", z.object({ actors: z.array(z.string()).max(200).optional(), filename: z.string().optional() }).strict()],
   ["puerts_save", "save", "Save approved project assets and the current level.", z.object({ assets: z.array(z.string()).optional(), level_path: z.string().optional() }).strict()],
+  ["puerts_asset_move", "asset_move",
+    "Move or rename one asset, leaving a redirector so existing references resolve. Refuses an "
+    + "occupied destination and the open level. Verifies from the Asset Registry and saves. Returns "
+    + "old_path, new_path, redirector_left, saved.",
+    z.object({
+      source_path: z.string().min(1).describe("Existing asset package or object path under /Game/."),
+      destination_path: z.string().min(1).describe("Target package path under /Game/, including the new asset name."),
+    }).strict()],
+  ["puerts_asset_create", "asset_create",
+    "Create and save one asset whose class is a concrete UDataAsset subclass; any other class is "
+    + "refused. Refuses an existing destination. Returns asset_path, object_path, asset_class.",
+    z.object({
+      package_path: z.string().min(1).describe("Destination folder under /Game/, for example /Game/SF/Data/Levels."),
+      asset_name: z.string().min(1).describe("New asset name, without a path."),
+      class_path: z.string().min(1).describe(
+        "Full class path: /Script/Module.NativeClass, or /Game/Path/BP_Thing.BP_Thing_C for a Blueprint class."),
+    }).strict()],
   ["puerts_level_create", "level_create",
     "Create, save and load a new project map. Refuses an existing target, a non-map template and "
     + "any dirty map or content package before switching levels.",
@@ -1884,8 +1901,13 @@ const specs = [
       template_path: z.string().min(1).optional().describe("Existing project map package path to copy from."),
     }).strict()],
   ["puerts_level_load", "level_load",
-    "Load an existing project map. Refuses non-map packages and refuses to switch while any map "
-    + "or content package is dirty. Loading the already-current map is a read-only no-op.",
+    "Schedule a load of an existing project map. Validation is immediate: it refuses non-map "
+    + "packages and refuses to switch while any map or content package is dirty. The load itself "
+    + "runs on the NEXT editor tick, after this call returns, because tearing down the UWorld "
+    + "inside the call crashed the editor. So a success here means scheduled, not loaded: check "
+    + "scheduled, load_state and active_level in the result. Confirm the new level with "
+    + "puerts_scene_inspect, or call this again for the same path to get already_loaded true plus "
+    + "the recorded outcome. Loading the already-current map is a read-only no-op.",
     z.object({ level_path: z.string().min(1).describe("Existing map package path under /Game/.") }).strict()],
   ["puerts_level_save", "level_save",
     "Save the current level and, when save_all is true, every dirty project package. Preserves "
@@ -2241,7 +2263,9 @@ export async function executeNativeCommand(
  * alias fail with a schema error instead of the quarantine reason.
  */
 export const QUARANTINED_TOOLS: ReadonlySet<string> = new Set([
-  "puerts_level_load",
+  // "puerts_level_load" removed 2026-08-06, pending the L13 -> L17 -> L11 -> L13
+  // acceptance. The native side no longer calls LoadMap inside the PuerTS call
+  // stack. Restore this line if the acceptance crashes the editor.
   "puerts_level_create",
 ]);
 

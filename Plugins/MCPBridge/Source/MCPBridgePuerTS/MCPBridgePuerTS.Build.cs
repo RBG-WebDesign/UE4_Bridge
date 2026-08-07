@@ -66,7 +66,13 @@ public class MCPBridgePuerTS : ModuleRules
         // AddRange is additive and duplicates are harmless, but which left five
         // lines each reading as though it were the whole list. Consolidated at
         // integration; add to this list rather than beside it.
+        // AssetTools is for asset_move only. IAssetTools::RenameAssets is the one
+        // 4.27 API that moves an asset AND leaves a UObjectRedirector behind, so
+        // existing references keep resolving. Moving the package file instead
+        // would break every referencer silently, and a .umap carries its package
+        // path in its own header, so a file move is not even correct for maps.
         PrivateDependencyModuleNames.AddRange(new string[] {
+            "AssetTools",
             "AIModule", "AnimGraph", "AssetRegistry", "AudioEditor", "BlueprintGraph", "GameplayTasks",
             "EngineSettings", "InputCore", "Json", "JsonUtilities", "JsEnv", "MaterialEditor",
             "MCPBridgeGraphBuilder", "MCPBridgePIEAgent", "NavigationSystem", "Projects",

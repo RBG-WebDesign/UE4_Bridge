@@ -94,7 +94,9 @@ async function main(): Promise<void> {
     });
     const client = new PuerTSClient();
     const tools = createPuertsTools(client);
-    assert(tools.length === 71, "expected all 71 discoverable PuerTS tools (73 specs less 2 quarantined)");
+    assert(tools.length === 74, "expected all 74 discoverable PuerTS tools (75 specs less 1 quarantined)");
+    assert(tools.some((tool) => tool.name === "puerts_asset_move"), "asset_move tool is missing");
+    assert(tools.some((tool) => tool.name === "puerts_asset_create"), "asset_create tool is missing");
     assert(tools.some((tool) => tool.name === "puerts_project_settings_patch"), "generic project settings tool is missing");
     assert(tools.some((tool) => tool.name === "puerts_behavior_tree_build"), "native Behavior Tree builder tool is missing");
     assert(tools.some((tool) => tool.name === "puerts_behavior_tree_inspect"), "native Behavior Tree inspector tool is missing");
@@ -2766,8 +2768,16 @@ async function levelLifecycleSuite(): Promise<void> {
   const save = tools.find((tool) => tool.name === "puerts_level_save");
   assert(create !== undefined && load !== undefined && save !== undefined, "native level lifecycle tools are incomplete");
   assert(
-    !tools.some((tool) => tool.name === "puerts_level_create" || tool.name === "puerts_level_load"),
-    "level_create and level_load crash the UE4.27 editor and must not be discoverable",
+    !tools.some((tool) => tool.name === "puerts_level_create"),
+    "level_create still loads the map it creates inside the PuerTS call stack and must not be discoverable",
+  );
+  // level_load left quarantine on 2026-08-06: LoadLevelJson now schedules a
+  // one-shot ticker instead of calling LoadMap inside the PuerTS call stack.
+  // level_create is NOT covered by that fix, because it loads the map it creates
+  // through its own path, so it stays quarantined until proved separately.
+  assert(
+    tools.some((tool) => tool.name === "puerts_level_load"),
+    "level_load is no longer quarantined and must be discoverable",
   );
   assert(
     create.inputSchema.safeParse({

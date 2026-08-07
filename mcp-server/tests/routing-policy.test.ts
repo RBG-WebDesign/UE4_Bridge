@@ -114,7 +114,8 @@ check("an apply carrying a hash nothing produced is caught", () => {
 
 check("calling a quarantined tool is caught even though it is not offered", () => {
   const t: Transcript = { toolsListed: listed, calls: [
-    { tool: "puerts_level_load", arguments: { level_path: "/Game/Maps/X" } },
+    // level_create, not level_load: level_load left quarantine on 2026-08-06.
+    { tool: "puerts_level_create", arguments: { level_path: "/Game/Maps/X" } },
   ] };
   assert(rulesOf(t).join() === "quarantined-tool-called", `got ${rulesOf(t).join(", ")}`);
 });

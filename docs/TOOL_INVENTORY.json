@@ -23,12 +23,12 @@
     "native_live_partial": "live acceptance passed, but part of the evidence is the builder own report because no independent reader exists yet",
     "legacy_untested": "no live editor proof of any kind; a non-null test_file covers only the mock listener"
   },
-  "tool_count": 309,
+  "tool_count": 311,
   "by_backend": {
     "legacy_http": 170,
     "native_pipe_alias": 62,
     "server_local": 4,
-    "native_pipe": 73
+    "native_pipe": 75
   },
   "tools": [
     {
@@ -8876,6 +8876,87 @@
       "verification": "live_verified"
     },
     {
+      "name": "puerts_asset_create",
+      "module": "mcp-server/src/tools/puerts.ts",
+      "backend": "native_pipe",
+      "migration_state": "native",
+      "target_replacement": null,
+      "description": "[PRIMARY NATIVE IPC] Create and save one asset whose class is a concrete UDataAsset subclass; any other class is refused. Refuses an existing destination. Returns asset_path, object_path, asset_class.",
+      "schema": {
+        "kind": "object",
+        "params": {
+          "package_path": "string",
+          "asset_name": "string",
+          "class_path": "string"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "module_listener_commands": [],
+      "test_file": "mcp-server/tests/puerts-tools.test.ts",
+      "capability_category": "assets",
+      "canonical_capability": "assets.create",
+      "owner": "MCPBridgePuerTS service",
+      "lifecycle": "active",
+      "migration_action": "KEEP",
+      "replacement_tool": null,
+      "compatibility_alias": false,
+      "cpp_builder": "MCPPuerTSBridgeService",
+      "cpp_entry_point": "CreateDataAssetJson",
+      "python_handler": null,
+      "live_evidence": [
+        "mcp-server/tests/puerts-tools.test.ts"
+      ],
+      "migration_risk": "low",
+      "capability_loss_risk": "low",
+      "notes": "Added and live-verified 2026-08-07 on UE4.27: created a /Script/Sinfeld_Demo.SFLevelConfig in a /Game/MCPGenerated sandbox, the Asset Registry reported type SFLevelConfig at the expected path, and the package saved with a Perforce add. Creates concrete UDataAsset subclasses only, enforced by the type system.",
+      "verification": "live_verified"
+    },
+    {
+      "name": "puerts_asset_move",
+      "module": "mcp-server/src/tools/puerts.ts",
+      "backend": "native_pipe",
+      "migration_state": "native",
+      "target_replacement": null,
+      "description": "[PRIMARY NATIVE IPC] Move or rename one asset, leaving a redirector so existing references resolve. Refuses an occupied destination and the open level. Verifies from the Asset Registry and saves. Returns old_path, new_path, redirector_left, saved.",
+      "schema": {
+        "kind": "object",
+        "params": {
+          "source_path": "string",
+          "destination_path": "string"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "module_listener_commands": [],
+      "test_file": "mcp-server/tests/puerts-tools.test.ts",
+      "capability_category": "assets",
+      "canonical_capability": "assets.move",
+      "owner": "MCPBridgePuerTS service",
+      "lifecycle": "active",
+      "migration_action": "KEEP",
+      "replacement_tool": null,
+      "compatibility_alias": false,
+      "cpp_builder": "MCPPuerTSBridgeService",
+      "cpp_entry_point": "MoveAssetJson",
+      "python_handler": null,
+      "live_evidence": [
+        "mcp-server/tests/puerts-tools.test.ts"
+      ],
+      "migration_risk": "low",
+      "capability_loss_risk": "low",
+      "notes": "Added and live-verified 2026-08-07 on UE4.27: a SFLevelConfig was moved between /Game/MCPGenerated sandbox folders, the Asset Registry showed it only at the destination, and the source path stopped resolving. Moves through IAssetTools::RenameAssets. NOTE: redirector_left was false in that run because the source was a never-submitted Perforce add, which UE reverts rather than redirecting; the redirector path on a submitted asset is not yet exercised.",
+      "verification": "live_verified"
+    },
+    {
       "name": "puerts_audio_build",
       "module": "mcp-server/src/tools/puerts.ts",
       "backend": "native_pipe",
@@ -10139,9 +10220,9 @@
       "name": "puerts_level_load",
       "module": "mcp-server/src/tools/puerts.ts",
       "backend": "native_pipe",
-      "migration_state": "quarantined",
+      "migration_state": "native_pending_live",
       "target_replacement": null,
-      "description": "[PRIMARY NATIVE IPC] Load an existing project map. Refuses non-map packages and refuses to switch while any map or content package is dirty. Loading the already-current map is a read-only no-op.",
+      "description": "[PRIMARY NATIVE IPC] Schedule a load of an existing project map. Validation is immediate: it refuses non-map packages and refuses to switch while any map or content package is dirty. The load itself runs on the NEXT editor tick, after this call returns, because tearing down the UWorld inside the call crashed the editor. So a success here means scheduled, not loaded: check scheduled, load_state and active_level in the result. Confirm the new level with puerts_scene_inspect, or call this again for the same path to get already_loaded true plus the recorded outcome. Loading the already-current map is a read-only no-op.",
       "schema": {
         "kind": "object",
         "params": {
@@ -10174,7 +10255,7 @@
       "migration_risk": "low",
       "capability_loss_risk": "low",
       "notes": "QUARANTINED 2026-08-05. Bridge-driven level switching crashed the UE4.27 editor 3/3 (EXCEPTION_ACCESS_VIOLATION in LoadLevelJson UEditorLoadingAndSavingUtils::LoadMap, and asynchronously in FTickFunctionTask::DoTask). Withheld from discovery and refused by the runtime with capability_quarantined. The earlier live_verified note covered a smoke run that did not switch levels. Use puerts_save with level_path instead. docs/CAPABILITY_FINDINGS.md, section Unknown.",
-      "verification": "quarantined"
+      "verification": "pending_live"
     },
     {
       "name": "puerts_level_save",

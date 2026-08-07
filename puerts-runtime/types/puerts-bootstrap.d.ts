@@ -155,6 +155,8 @@ declare module "ue" {
     CreateLevelJson(levelPath: string, templatePath: string, outResultJson: $Ref<string>, outError: $Ref<string>): boolean;
     LoadLevelJson(levelPath: string, outResultJson: $Ref<string>, outError: $Ref<string>): boolean;
     SaveLevelJson(saveAll: boolean, outResultJson: $Ref<string>, outError: $Ref<string>): boolean;
+    MoveAssetJson(sourcePath: string, destinationPath: string, outResultJson: $Ref<string>, outError: $Ref<string>): boolean;
+    CreateDataAssetJson(packagePath: string, assetName: string, classPath: string, outResultJson: $Ref<string>, outError: $Ref<string>): boolean;
     StartPlayInEditor(outError: $Ref<string>): boolean;
     StopPlayInEditor(outError: $Ref<string>): boolean;
     UndoLastMCPTransaction(expectedId: string, outId: $Ref<string>, outError: $Ref<string>): boolean;

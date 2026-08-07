@@ -75,6 +75,14 @@ export const toolAnnotations: Record<string, ToolAnnotations> = {
   // Permanent package deletion. Idempotent because an already absent asset is
   // a successful no-op; force=true may also null references in other packages.
   puerts_delete_asset: destructiveIdempotent,
+  // Destructive: the source path stops holding the asset, and the redirector it
+  // leaves is not the asset. NOT idempotent: a repeat finds no source and fails,
+  // rather than reporting the move it already did.
+  puerts_asset_move: destructive,
+  // Mutating, not destructive: it writes one new package and refuses an occupied
+  // destination, so it never replaces anything. Not idempotent for the same
+  // reason - a repeat is refused rather than converging.
+  puerts_asset_create: mutating,
   puerts_find_actors: readOnly,
   puerts_read_property: readOnly,
   puerts_get_logs: readOnly,

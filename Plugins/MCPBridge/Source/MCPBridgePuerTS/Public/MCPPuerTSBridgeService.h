@@ -423,6 +423,24 @@ public:
         FString& OutResultJson,
         FString& OutError);
 
+    /** Move or rename one asset through IAssetTools, which leaves a redirector
+        so existing references keep resolving. Never a filesystem move. */
+    UFUNCTION(BlueprintCallable, Category="MCP PuerTS Bridge")
+    bool MoveAssetJson(
+        const FString& SourcePath,
+        const FString& DestinationPath,
+        FString& OutResultJson,
+        FString& OutError);
+
+    /** Create one UDataAsset-derived asset by class path, then save it. */
+    UFUNCTION(BlueprintCallable, Category="MCP PuerTS Bridge")
+    bool CreateDataAssetJson(
+        const FString& PackagePath,
+        const FString& AssetName,
+        const FString& ClassPath,
+        FString& OutResultJson,
+        FString& OutError);
+
     UFUNCTION(BlueprintCallable, Category="MCP PuerTS Bridge")
     bool StartPlayInEditor(FString& OutError);
 
@@ -542,6 +560,43 @@ private:
     FString InstalledManifestHash;
     FString SessionCreatedAt;
     FDelegateHandle HeartbeatHandle;
+
+    // Deferred level load.
+    //
+    // UEditorLoadingAndSavingUtils::LoadMap tears down the current UWorld. Doing
+    // that from inside the PuerTS call stack killed the editor 3 times out of 3
+    // on 2026-08-05, once synchronously inside the LoadMap call reached through
+    // FJsEnvImpl::UvRunOnce -> FFunctionTranslator::Call -> execLoadLevelJson,
+    // and once asynchronously in FTickFunctionTask::DoTask seconds later. The
+    // editor's own map load never crashes, so the fault is the V8 stack being
+    // live across the teardown, not LoadMap itself. See docs/CAPABILITY_FINDINGS.md.
+    //
+    // So the request is recorded, LoadLevelJson returns, PuerTS unwinds, and a
+    // one-shot ticker performs the load on the next game-thread tick. Every field
+    // here is an FString or an enum on purpose: nothing world-owned is retained
+    // across the teardown, because that is the thing that crashed.
+    enum class ELevelLoadState : uint8
+    {
+        Idle,
+        Scheduled,
+        Succeeded,
+        Failed
+    };
+    ELevelLoadState PendingLevelLoadState = ELevelLoadState::Idle;
+    FString PendingLevelLoadPath;
+    FString PendingLevelLoadFilename;
+    FString PendingLevelLoadPreviousPath;
+    FString LastLevelLoadError;
+    FString LastLevelLoadRequestedAt;
+    FString LastLevelLoadCompletedAt;
+    FDelegateHandle PendingLevelLoadHandle;
+
+    /** One-shot ticker body that performs the deferred load. Always returns
+        false so the ticker unregisters itself after a single fire. */
+    bool TickDeferredLevelLoad(float DeltaSeconds);
+
+    /** Report the current deferred-load record without scheduling anything. */
+    void WriteLevelLoadStatus(const TSharedPtr<FJsonObject>& Result) const;
 
     TSet<FString> AllowedTools;
     TSet<FString> AllowedWritableProperties;

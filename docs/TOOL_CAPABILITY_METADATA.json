@@ -405,6 +405,28 @@
       ],
       "notes": "Verified over authenticated PuerTS named pipe connection on UE4.27."
     },
+    "puerts_asset_move": {
+      "canonical_capability": "assets.move",
+      "capability_category": "assets",
+      "cpp_builder": "MCPPuerTSBridgeService",
+      "cpp_entry_point": "MoveAssetJson",
+      "verification": "live_verified",
+      "live_evidence": [
+        "mcp-server/tests/puerts-tools.test.ts"
+      ],
+      "notes": "Added and live-verified 2026-08-07 on UE4.27: a SFLevelConfig was moved between /Game/MCPGenerated sandbox folders, the Asset Registry showed it only at the destination, and the source path stopped resolving. Moves through IAssetTools::RenameAssets. NOTE: redirector_left was false in that run because the source was a never-submitted Perforce add, which UE reverts rather than redirecting; the redirector path on a submitted asset is not yet exercised."
+    },
+    "puerts_asset_create": {
+      "canonical_capability": "assets.create",
+      "capability_category": "assets",
+      "cpp_builder": "MCPPuerTSBridgeService",
+      "cpp_entry_point": "CreateDataAssetJson",
+      "verification": "live_verified",
+      "live_evidence": [
+        "mcp-server/tests/puerts-tools.test.ts"
+      ],
+      "notes": "Added and live-verified 2026-08-07 on UE4.27: created a /Script/Sinfeld_Demo.SFLevelConfig in a /Game/MCPGenerated sandbox, the Asset Registry reported type SFLevelConfig at the expected path, and the package saved with a Perforce add. Creates concrete UDataAsset subclasses only, enforced by the type system."
+    },
     "puerts_read_property": {
       "canonical_capability": "properties.get",
       "capability_category": "properties",

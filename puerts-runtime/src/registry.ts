@@ -2400,6 +2400,50 @@ async function createLevel(context: ToolContext, input: JsonObject): Promise<Com
   return result;
 }
 
+async function moveAsset(context: ToolContext, input: JsonObject): Promise<CommandResponse> {
+  const source = requireString(input, "source_path");
+  const destination = requireString(input, "destination_path");
+  const resultJson = puerts.$ref<string>("");
+  const error = puerts.$ref<string>("");
+  if (!context.bridge.MoveAssetJson(source, destination, resultJson, error)) {
+    throw new Error(puerts.$unref(error));
+  }
+  const data = JSON.parse(puerts.$unref(resultJson)) as JsonObject;
+  const result = response(true, "Asset moved.", data);
+  const newPath = data.new_path;
+  if (typeof newPath === "string" && newPath.length > 0) {
+    result.changed_assets.push(newPath);
+  }
+  if (data.redirector_left !== true) {
+    result.warnings.push(
+      "No redirector was left at the old path. Anything that referenced the old path by name "
+      + "will no longer resolve.");
+  }
+  if (data.saved !== true) {
+    result.warnings.push("The moved package was not saved; the move will not survive a reload.");
+  }
+  return result;
+}
+
+async function createDataAsset(context: ToolContext, input: JsonObject): Promise<CommandResponse> {
+  const packagePath = requireString(input, "package_path");
+  const assetName = requireString(input, "asset_name");
+  const classPath = requireString(input, "class_path");
+  const resultJson = puerts.$ref<string>("");
+  const error = puerts.$ref<string>("");
+  if (!context.bridge.CreateDataAssetJson(packagePath, assetName, classPath, resultJson, error)) {
+    throw new Error(puerts.$unref(error));
+  }
+  const data = JSON.parse(puerts.$unref(resultJson)) as JsonObject;
+  const result = response(true, "Data Asset created and saved.", data);
+  const assetPath = data.asset_path;
+  if (typeof assetPath === "string" && assetPath.length > 0) {
+    result.changed_assets.push(assetPath);
+  }
+  result.warnings.push("Asset creation and save are not covered by editor undo.");
+  return result;
+}
+
 async function loadLevel(context: ToolContext, input: JsonObject): Promise<CommandResponse> {
   const levelPath = requireString(input, "level_path");
   const resultJson = puerts.$ref<string>("");
@@ -2407,7 +2451,25 @@ async function loadLevel(context: ToolContext, input: JsonObject): Promise<Comma
   if (!context.bridge.LoadLevelJson(levelPath, resultJson, error)) {
     throw new Error(puerts.$unref(error));
   }
-  return response(true, "Level loaded.", JSON.parse(puerts.$unref(resultJson)) as JsonObject);
+  const data = JSON.parse(puerts.$unref(resultJson)) as JsonObject;
+  // The native side no longer loads inside this call: it schedules the load for
+  // the next game-thread tick so PuerTS has unwound before the UWorld teardown.
+  // Say which of the three states came back rather than always claiming a load.
+  const message = data.scheduled === true
+    ? "Level load scheduled for the next editor tick."
+    : data.already_loaded === true
+      ? "Level is already the active editor level."
+      : "Level loaded.";
+  const result = response(true, message, data);
+  if (data.scheduled === true) {
+    result.warnings.push(
+      "The editor level changes after this command returns. Confirm with puerts_scene_inspect "
+      + "before assuming the new level is active.");
+  }
+  if (typeof data.load_error === "string" && data.load_error.length > 0) {
+    result.warnings.push(`Previous level load failed: ${data.load_error}`);
+  }
+  return result;
 }
 
 async function saveLevel(context: ToolContext, input: JsonObject): Promise<CommandResponse> {
@@ -2733,15 +2795,11 @@ async function startProjectPackage(context: ToolContext, input: JsonObject): Pro
  * survive a runtime that has been replaced.
  */
 export const quarantinedTools: Readonly<Record<string, string>> = {
-  level_load:
-    "Disabled after a repeatable editor crash. Bridge-driven level switching killed the "
-    + "UE4.27 editor 3 times out of 3 on 2026-08-05, at two different crash sites "
-    + "(EXCEPTION_ACCESS_VIOLATION inside LoadLevelJson's UEditorLoadingAndSavingUtils::LoadMap "
-    + "call, and asynchronously in FTickFunctionTask::DoTask a few seconds later). The editor's "
-    + "own startup map load never crashes, so the fault is in the PuerTS UObject binding table "
-    + "not surviving UWorld teardown. Work in the level the editor already has open, and use "
-    + "puerts_save with level_path to move it to a new package. See docs/CAPABILITY_FINDINGS.md, "
-    + "section Unknown.",
+  // level_load was quarantined here on 2026-08-05 and is UNQUARANTINED PENDING
+  // ACCEPTANCE as of 2026-08-06: LoadLevelJson no longer calls LoadMap inside the
+  // PuerTS call stack, it schedules a one-shot ticker and returns. Restore this
+  // entry verbatim from git history if the L13 -> L17 -> L11 -> L13 acceptance
+  // (5 cycles, 15 transitions) crashes the editor again.
   level_create:
     "Disabled after a repeatable editor crash. It loads the map it creates, so it reaches the "
     + "same PuerTS binding-table fault as level_load and was reproduced on a brand-new blank map "
@@ -2753,6 +2811,10 @@ export const toolDefinitions: readonly ToolDefinition[] = [
   { name: "diagnostic", permissions: ["actors.read"], executionTimeoutMs: 2000, execute: diagnostic },
   { name: "find_assets", permissions: ["assets.read"], executionTimeoutMs: 4000, execute: findAssets },
   { name: "delete_asset", permissions: ["assets.delete"], executionTimeoutMs: 30000, execute: deleteAsset },
+  // Asset lifecycle. Both write package files and save before returning, so the
+  // budgets match delete_asset rather than a read.
+  { name: "asset_move", permissions: ["assets.write"], executionTimeoutMs: 30000, execute: moveAsset },
+  { name: "asset_create", permissions: ["assets.write"], executionTimeoutMs: 30000, execute: createDataAsset },
   // folder_filter and include_transforms are the legacy level_actors parameters
   // restored. Either one routes the read through the scene snapshot, which is a
   // heavier read than the default actor iteration, hence the larger budget.

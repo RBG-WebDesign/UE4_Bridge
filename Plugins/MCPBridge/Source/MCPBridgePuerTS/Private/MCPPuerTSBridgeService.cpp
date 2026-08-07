@@ -306,6 +306,12 @@ bool UMCPPuerTSBridgeService::Initialize(FString& OutError)
             // Permanent asset deletion. It is not an editor transaction because
             // neither the package file nor broken references can be restored by undo.
             TEXT("delete_asset"),
+            // Asset lifecycle. asset_move goes through IAssetTools so a redirector
+            // is left behind and source control sees a real move; asset_create makes
+            // UDataAsset subclasses only, enforced by the type system rather than a
+            // name list. Neither is an editor transaction: both write package files,
+            // and undo does not restore those.
+            TEXT("asset_move"), TEXT("asset_create"),
             TEXT("save"), TEXT("level_create"), TEXT("level_load"), TEXT("level_save"), TEXT("pie_start"), TEXT("pie_stop"), TEXT("undo"),
             TEXT("physics_build"), TEXT("physics_observe"), TEXT("viewport_screenshot"), TEXT("sky_shader_create"),
             TEXT("blueprint_build"), TEXT("blueprint_graph_patch"), TEXT("blueprint_member_patch"), TEXT("widget_build"),
@@ -575,6 +581,15 @@ void UMCPPuerTSBridgeService::Shutdown()
         FTicker::GetCoreTicker().RemoveTicker(HeartbeatHandle);
         HeartbeatHandle.Reset();
     }
+    // A scheduled load that has not ticked yet must never fire into a service
+    // that is going away. This is the same class of defect as the PIE agent
+    // removing its ticker in ShutdownModule: by then it is too late.
+    if (PendingLevelLoadHandle.IsValid())
+    {
+        FTicker::GetCoreTicker().RemoveTicker(PendingLevelLoadHandle);
+        PendingLevelLoadHandle.Reset();
+    }
+    PendingLevelLoadState = ELevelLoadState::Idle;
     // Mark the session shut down, then remove it. The intermediate write is not
     // ceremony: if the delete fails (a client holding the file open, a locked
     // directory) the manifest that survives says "shut_down" rather than
@@ -1722,32 +1737,160 @@ bool UMCPPuerTSBridgeService::LoadLevelJson(
         return false;
     }
 
+    // Read the current world name and then stop touching the world. Nothing
+    // below this line may hold a UObject: the load tears the world down, and a
+    // reference that survives that teardown is exactly the crash being fixed.
     UWorld* CurrentWorld = GEditor->GetEditorWorldContext().World();
     const FString PreviousLevel = CurrentWorld != nullptr
         ? CurrentWorld->GetOutermost()->GetName()
         : FString();
-    const bool bAlreadyLoaded = PreviousLevel == LevelPath;
-    if (!bAlreadyLoaded)
+
+    // A load already scheduled but not yet ticked. Report it rather than
+    // stacking a second teardown behind the first.
+    if (PendingLevelLoadState == ELevelLoadState::Scheduled)
     {
-        if (!RefuseLevelSwitchWithDirtyPackages(OutError))
-        {
-            return false;
-        }
-        UWorld* LoadedWorld = UEditorLoadingAndSavingUtils::LoadMap(Filename);
-        if (LoadedWorld == nullptr || LoadedWorld->GetOutermost()->GetName() != LevelPath)
-        {
-            OutError = FString::Printf(TEXT("Unreal could not load level: %s"), *LevelPath);
-            return false;
-        }
+        TSharedPtr<FJsonObject> Pending = MakeShared<FJsonObject>();
+        Pending->SetStringField(TEXT("level"), PendingLevelLoadPath);
+        Pending->SetStringField(TEXT("active_level"), PreviousLevel);
+        Pending->SetBoolField(TEXT("scheduled"), true);
+        Pending->SetBoolField(TEXT("loaded"), false);
+        WriteLevelLoadStatus(Pending);
+        OutResultJson = SerializeJson(Pending);
+        return true;
     }
+
+    if (PreviousLevel == LevelPath)
+    {
+        // Already the active world. This is also the success read-back: after a
+        // deferred load completes, calling again for the same path lands here
+        // and reports the recorded outcome alongside the live world name.
+        TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+        Result->SetStringField(TEXT("level"), LevelPath);
+        Result->SetStringField(TEXT("active_level"), PreviousLevel);
+        Result->SetStringField(TEXT("previous_level"), PendingLevelLoadPreviousPath);
+        Result->SetBoolField(TEXT("loaded"), true);
+        Result->SetBoolField(TEXT("already_loaded"), true);
+        Result->SetBoolField(TEXT("scheduled"), false);
+        WriteLevelLoadStatus(Result);
+        OutResultJson = SerializeJson(Result);
+        return true;
+    }
+
+    // Validate before scheduling. A refusal has to happen while the caller is
+    // still on the line; once the ticker owns the request there is nobody to
+    // return an error to except the next poll.
+    if (!RefuseLevelSwitchWithDirtyPackages(OutError))
+    {
+        return false;
+    }
+
+    PendingLevelLoadPath = LevelPath;
+    PendingLevelLoadFilename = Filename;
+    PendingLevelLoadPreviousPath = PreviousLevel;
+    PendingLevelLoadState = ELevelLoadState::Scheduled;
+    LastLevelLoadError.Empty();
+    LastLevelLoadRequestedAt = FDateTime::UtcNow().ToIso8601();
+    LastLevelLoadCompletedAt.Empty();
+
+    // Delay 0 means "next tick", which is the whole fix: PuerTS has returned and
+    // V8's stack is unwound before the world is touched.
+    PendingLevelLoadHandle = FTicker::GetCoreTicker().AddTicker(
+        FTickerDelegate::CreateUObject(this, &UMCPPuerTSBridgeService::TickDeferredLevelLoad), 0.0f);
 
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetStringField(TEXT("level"), LevelPath);
+    Result->SetStringField(TEXT("active_level"), PreviousLevel);
     Result->SetStringField(TEXT("previous_level"), PreviousLevel);
-    Result->SetBoolField(TEXT("loaded"), true);
-    Result->SetBoolField(TEXT("already_loaded"), bAlreadyLoaded);
+    Result->SetBoolField(TEXT("scheduled"), true);
+    Result->SetBoolField(TEXT("loaded"), false);
+    Result->SetBoolField(TEXT("already_loaded"), false);
+    Result->SetStringField(TEXT("note"),
+        TEXT("The load runs on the next game-thread tick. Poll puerts_scene_inspect, "
+             "or call puerts_level_load again for the same path, to confirm it became active."));
+    WriteLevelLoadStatus(Result);
     OutResultJson = SerializeJson(Result);
     return true;
+}
+
+bool UMCPPuerTSBridgeService::TickDeferredLevelLoad(float /*DeltaSeconds*/)
+{
+    // One-shot. Clear the handle first so any failure path below still leaves
+    // the ticker unregistered rather than firing a second teardown next frame.
+    PendingLevelLoadHandle.Reset();
+
+    if (PendingLevelLoadState != ELevelLoadState::Scheduled)
+    {
+        return false;
+    }
+
+    const FString TargetPath = PendingLevelLoadPath;
+    const FString TargetFilename = PendingLevelLoadFilename;
+
+    if (GEditor == nullptr)
+    {
+        PendingLevelLoadState = ELevelLoadState::Failed;
+        LastLevelLoadError = TEXT("GEditor became unavailable before the deferred load ran.");
+        LastLevelLoadCompletedAt = FDateTime::UtcNow().ToIso8601();
+        return false;
+    }
+
+    UWorld* LoadedWorld = UEditorLoadingAndSavingUtils::LoadMap(TargetFilename);
+
+    // Re-derive the active world name from the editor rather than trusting the
+    // returned pointer: the point of this whole change is to not lean on a
+    // UObject that spans a teardown.
+    UWorld* ActiveWorld = GEditor->GetEditorWorldContext().World();
+    const FString ActivePath = ActiveWorld != nullptr
+        ? ActiveWorld->GetOutermost()->GetName()
+        : FString();
+
+    LastLevelLoadCompletedAt = FDateTime::UtcNow().ToIso8601();
+
+    if (LoadedWorld == nullptr || ActivePath != TargetPath)
+    {
+        PendingLevelLoadState = ELevelLoadState::Failed;
+        LastLevelLoadError = FString::Printf(
+            TEXT("Unreal could not load level %s; the active level is %s."),
+            *TargetPath,
+            ActivePath.IsEmpty() ? TEXT("(none)") : *ActivePath);
+        UE_LOG(LogMCPPuerTSBridge, Error, TEXT("MCPBridge deferred level load failed: %s"), *LastLevelLoadError);
+    }
+    else
+    {
+        PendingLevelLoadState = ELevelLoadState::Succeeded;
+        LastLevelLoadError.Empty();
+        UE_LOG(LogMCPPuerTSBridge, Display,
+            TEXT("MCPBridge deferred level load complete: %s"), *TargetPath);
+    }
+
+    // Republish the manifest so a client polling across the transition sees a
+    // fresh heartbeat instead of concluding the editor died during the load.
+    WriteSessionManifest(TEXT("running"));
+
+    return false;
+}
+
+void UMCPPuerTSBridgeService::WriteLevelLoadStatus(const TSharedPtr<FJsonObject>& Result) const
+{
+    if (!Result.IsValid())
+    {
+        return;
+    }
+    const TCHAR* StateText = TEXT("idle");
+    switch (PendingLevelLoadState)
+    {
+    case ELevelLoadState::Scheduled: StateText = TEXT("scheduled"); break;
+    case ELevelLoadState::Succeeded: StateText = TEXT("succeeded"); break;
+    case ELevelLoadState::Failed:    StateText = TEXT("failed");    break;
+    default:                         StateText = TEXT("idle");      break;
+    }
+    Result->SetStringField(TEXT("load_state"), StateText);
+    Result->SetStringField(TEXT("requested_at"), LastLevelLoadRequestedAt);
+    Result->SetStringField(TEXT("completed_at"), LastLevelLoadCompletedAt);
+    if (!LastLevelLoadError.IsEmpty())
+    {
+        Result->SetStringField(TEXT("load_error"), LastLevelLoadError);
+    }
 }
 
 bool UMCPPuerTSBridgeService::SaveLevelJson(
