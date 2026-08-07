@@ -518,8 +518,8 @@ const specs = [
       ),
       limit: z.number().optional(),
     }).strict()],
-  ["puerts_read_property", "read_property", "Read an Unreal reflected property.", z.object({ ...target, property: z.string() }).strict()],
-  ["puerts_set_property", "set_property", "Set an approved Unreal reflected property in a transaction.", z.object({ ...target, property: z.string(), value: reflectedValue }).strict()],
+  ["puerts_read_property", "read_property", "Read an Unreal reflected property. An enum reads and writes as its entry name, not a number. An unknown property name is refused with the closest names on the class; the lookup is case-insensitive.", z.object({ ...target, property: z.string() }).strict()],
+  ["puerts_set_property", "set_property", "Set an approved Unreal reflected property in a transaction. An enum takes its entry name, the same spelling read_property reports.", z.object({ ...target, property: z.string(), value: reflectedValue }).strict()],
   ["puerts_call_function", "call_function", "Call a native-approved Unreal function.", z.object({ actor: z.string(), function: z.string(), arguments: z.array(z.unknown()).optional() }).strict()],
   ["puerts_spawn_actor", "spawn_actor",
     "Spawn one actor in a transaction. "

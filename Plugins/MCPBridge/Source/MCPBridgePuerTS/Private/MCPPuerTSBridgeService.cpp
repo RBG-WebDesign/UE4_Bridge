@@ -227,6 +227,40 @@ bool RefuseLevelSwitchWithDirtyPackages(FString& OutError)
         *FString::Join(DirtyNames, TEXT(", ")));
     return false;
 }
+
+/** A property miss answered with the class and the closest names on it, so a
+    caller fixes the name from the refusal instead of spending a round trip
+    discovering it.
+
+    Casing is NOT what gets here: FindFProperty resolves through FName, which is
+    already case-insensitive, so "intensity" finds Intensity and never reaches
+    this function (measured 2026-08-07). What gets here is a wrong name - a
+    plausible synonym or a guessed prefix - which is why the match is by
+    substring in both directions: "LightIntensity" has to find "Intensity".
+    Case-insensitivity is kept anyway because it costs nothing and the search is
+    over one class's properties. No edit distance: it would add a scoring
+    parameter to tune for the typo case that FName already absorbs. */
+FString DescribePropertyNotFound(const UObject* Object, const FString& PropertyName)
+{
+    TArray<FString> Candidates;
+    for (TFieldIterator<FProperty> It(Object->GetClass()); It && Candidates.Num() < 5; ++It)
+    {
+        const FString Name = It->GetName();
+        if (Name.Equals(PropertyName, ESearchCase::IgnoreCase)
+            || Name.Contains(PropertyName, ESearchCase::IgnoreCase)
+            || PropertyName.Contains(Name, ESearchCase::IgnoreCase))
+        {
+            Candidates.Add(Name);
+        }
+    }
+    return FString::Printf(
+        TEXT("Property '%s' not found on %s.%s"),
+        *PropertyName,
+        *Object->GetClass()->GetName(),
+        Candidates.Num() > 0
+            ? *FString::Printf(TEXT(" Closest: %s."), *FString::Join(Candidates, TEXT(", ")))
+            : TEXT(""));
+}
 }
 
 class UMCPPuerTSBridgeService::FBridgeLogCapture final : public FOutputDevice
@@ -1247,7 +1281,7 @@ bool UMCPPuerTSBridgeService::ReadObjectPropertyJson(
     FProperty* Property = FindFProperty<FProperty>(Object->GetClass(), *PropertyName);
     if (Property == nullptr)
     {
-        OutError = TEXT("Reflected property not found.");
+        OutError = DescribePropertyNotFound(Object, PropertyName);
         return false;
     }
     TSharedPtr<FJsonValue> Value = FJsonObjectConverter::UPropertyToJsonValue(
@@ -1259,6 +1293,11 @@ bool UMCPPuerTSBridgeService::ReadObjectPropertyJson(
         return false;
     }
     TSharedPtr<FJsonObject> Wrapper = MakeShared<FJsonObject>();
+    // An enum needs no special handling here: FJsonObjectConverter already
+    // serializes FEnumProperty and enum-backed numerics as their entry NAME
+    // (JsonObjectConverter.cpp, ConvertScalarFPropertyToJsonValue), and reads
+    // that same name back on the way in. Measured 2026-08-07 against a live
+    // PointLightComponent: Mobility reads "Stationary", not 1.
     Wrapper->SetField(TEXT("value"), Value);
     OutValueJson = SerializeJson(Wrapper);
     OutObjectPath = Object->GetPathName();
@@ -1280,7 +1319,7 @@ bool UMCPPuerTSBridgeService::SetObjectPropertyJson(
     FProperty* Property = FindFProperty<FProperty>(Object->GetClass(), *PropertyName);
     if (Property == nullptr)
     {
-        OutError = TEXT("Reflected property not found.");
+        OutError = DescribePropertyNotFound(Object, PropertyName);
         return false;
     }
     if (!IsWritablePropertyAllowed(Object, PropertyName))

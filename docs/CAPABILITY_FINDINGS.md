@@ -9,7 +9,7 @@ maintains this file; Phase L consumes it.
 | Capability | Evidence (2026-07-31) |
 |---|---|
 | Object-reference reads | `read_property PlayerStart RootComponent` returns the component path string |
-| Enum reads | `Mobility` returns the numeric value (0). No name; enhancement candidate |
+| Enum reads | CORRECTED 2026-08-07: reads the entry NAME, not a number. Live against `PointLight_1.LightComponent0`, `Mobility` returned `"Stationary"`; `set_property` took `"Movable"` and read back `"Movable"`. The engine does this, not the bridge: `FJsonObjectConverter` writes an enum as its name and parses one back (`JsonObjectConverter.cpp` lines 43-57 and 397-430), covering both `FEnumProperty` and enum-backed numerics. The original "returns 0, enhancement candidate" reading was never reproduced and the rows for component templates, physics and member variables below already contradicted it with `"Movable"` read-backs. A `value_name` enrichment was built against the old reading and deleted unused |
 | Empty array reads | `Tags` returns `[]` |
 | Blueprint class spawn | `spawn_actor` with `/Game/MCPAcceptance/BP_TestActor.BP_TestActor_C` spawned and transacted, 12.3 ms |
 | call_function with qualified names | `Actor.SetActorLabel ["ProbeRenamed"]` succeeded; `Actor.GetActorLocation` returns a proper `{x,y,z}` |

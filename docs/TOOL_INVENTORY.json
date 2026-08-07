@@ -11004,7 +11004,7 @@
       "backend": "native_pipe",
       "migration_state": "native",
       "target_replacement": null,
-      "description": "[PRIMARY NATIVE IPC] Read an Unreal reflected property.",
+      "description": "[PRIMARY NATIVE IPC] Read an Unreal reflected property. An enum reads and writes as its entry name, not a number. An unknown property name is refused with the closest names on the class; the lookup is case-insensitive.",
       "schema": {
         "kind": "object",
         "params": {
@@ -11364,7 +11364,7 @@
       "backend": "native_pipe",
       "migration_state": "native",
       "target_replacement": null,
-      "description": "[PRIMARY NATIVE IPC] Set an approved Unreal reflected property in a transaction.",
+      "description": "[PRIMARY NATIVE IPC] Set an approved Unreal reflected property in a transaction. An enum takes its entry name, the same spelling read_property reports.",
       "schema": {
         "kind": "object",
         "params": {

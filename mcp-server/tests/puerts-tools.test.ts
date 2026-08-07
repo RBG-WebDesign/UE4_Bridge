@@ -267,11 +267,17 @@ async function marshalingSuite(): Promise<void> {
   const server = createServer((socket) => socket.once("data", (data: Buffer) => {
     const request = JSON.parse(data.toString("utf8")) as { params?: Record<string, unknown> };
     received.push(request.params ?? {});
+    // An enum answers with its entry NAME, which is what FJsonObjectConverter
+    // produces for one. Everything else keeps the struct shape the rest of this
+    // suite asserts on.
+    const data_ = request.params?.property === "Mobility"
+      ? { property: "Mobility", value: "Stationary" }
+      : { property: "RelativeLocation", value: { x: 10, y: 20, z: 112 } };
     socket.end(JSON.stringify({
       session: RESPONSE_SESSION,
       success: true,
       message: "Property changed.",
-      data: { property: "RelativeLocation", value: { x: 10, y: 20, z: 112 } },
+      data: data_,
       changed_assets: [],
       changed_actors: [],
       warnings: [],
@@ -341,7 +347,31 @@ async function marshalingSuite(): Promise<void> {
     });
     const readPayload = JSON.parse(read.content[0]?.text ?? "null") as { data?: { value?: Record<string, number> } };
     assert(readPayload.data?.value?.z === 112, "a struct read was flattened on the way back");
+
+    // An enum crosses as its entry NAME in both directions. This is engine
+    // behaviour, not bridge behaviour: FJsonObjectConverter writes the name on
+    // the way out and parses it on the way in, so the bridge adds no enum
+    // translation of its own. Asserted here because a caller reads it off this
+    // wire, and because a "helpful" numeric conversion was written against the
+    // opposite assumption on 2026-08-07 and had to be deleted.
+    const enumRead = await readTool.handler({
+      object_path: "/Temp/Untitled_1.Untitled_1:PersistentLevel.PlayerStart.CollisionCapsule",
+      property: "Mobility",
+    });
+    const enumPayload = JSON.parse(enumRead.content[0]?.text ?? "null") as { data?: { value?: unknown } };
+    assert(enumPayload.data?.value === "Stationary", "an enum name did not survive the trip back");
+
+    await setTool.handler({
+      object_path: "/Temp/Untitled_1.Untitled_1:PersistentLevel.PlayerStart.CollisionCapsule",
+      property: "Mobility",
+      value: "Movable",
+    });
+    assert(
+      received[received.length - 1]?.value === "Movable",
+      "an enum entry name did not reach the pipe as a string",
+    );
     console.log("  PASS  struct and array marshaling in both directions");
+    console.log("  PASS  an enum crosses as its entry name in both directions");
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await rm(directory, { recursive: true, force: true });
