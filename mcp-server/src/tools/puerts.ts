@@ -1888,7 +1888,7 @@ const specs = [
     "Create and save one asset whose class is a concrete UDataAsset subclass; any other class is "
     + "refused. Refuses an existing destination. Returns asset_path, object_path, asset_class.",
     z.object({
-      package_path: z.string().min(1).describe("Destination folder under /Game/, for example /Game/SF/Data/Levels."),
+      package_path: z.string().min(1).describe("Destination folder under /Game/, for example /Game/00_SINFELD/Data/Levels."),
       asset_name: z.string().min(1).describe("New asset name, without a path."),
       class_path: z.string().min(1).describe(
         "Full class path: /Script/Module.NativeClass, or /Game/Path/BP_Thing.BP_Thing_C for a Blueprint class."),
