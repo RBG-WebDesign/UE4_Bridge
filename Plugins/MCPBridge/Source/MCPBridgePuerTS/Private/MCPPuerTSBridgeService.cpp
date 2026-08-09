@@ -373,7 +373,7 @@ bool UMCPPuerTSBridgeService::Initialize(FString& OutError)
             TEXT("nav_build"),
             // Read only. Deliberately absent from IsToolMutating below, so they
             // open no transaction and return no transaction id.
-            TEXT("diagnostic"), TEXT("find_assets"), TEXT("find_actors"), TEXT("read_property"),
+            TEXT("diagnostic"), TEXT("find_assets"), TEXT("assets_cleaner_largest_unused"), TEXT("find_actors"), TEXT("read_property"),
             TEXT("get_logs"), TEXT("graph_inspect"), TEXT("behavior_tree_inspect"), TEXT("widget_inspect"),
             TEXT("anim_blueprint_inspect"), TEXT("anim_montage_inspect"), TEXT("anim_blend_space_inspect"), TEXT("blackboard_inspect"),
             TEXT("eqs_inspect"), TEXT("nav_inspect"), TEXT("nav_query"), TEXT("ai_controller_inspect"),

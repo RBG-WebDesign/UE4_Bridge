@@ -392,6 +392,15 @@
       ],
       "notes": "Verified over authenticated PuerTS named pipe connection on UE4.27."
     },
+    "puerts_assets_cleaner_largest_unused": {
+      "canonical_capability": "assets.audit_unused",
+      "capability_category": "assets",
+      "verification": "implemented",
+      "live_evidence": [
+        "mcp-server/tests/puerts-tools.test.ts"
+      ],
+      "notes": "Read-only unused-asset disk-size audit. Classification mirrors AssetsCleanerUtils::ShouldFilterOutAsset exactly (the plugin exposes no callable scanner); sizes come from file stats of the package files plus sidecars."
+    },
     "puerts_delete_asset": {
       "canonical_capability": "assets.delete",
       "capability_category": "assets",

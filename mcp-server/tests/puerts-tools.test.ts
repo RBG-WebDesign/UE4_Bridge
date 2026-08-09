@@ -94,7 +94,8 @@ async function main(): Promise<void> {
     });
     const client = new PuerTSClient();
     const tools = createPuertsTools(client);
-    assert(tools.length === 74, "expected all 74 discoverable PuerTS tools (75 specs less 1 quarantined)");
+    assert(tools.length === 75, "expected all 75 discoverable PuerTS tools (76 specs less 1 quarantined)");
+    assert(tools.some((tool) => tool.name === "puerts_assets_cleaner_largest_unused"), "assets_cleaner_largest_unused tool is missing");
     assert(tools.some((tool) => tool.name === "puerts_asset_move"), "asset_move tool is missing");
     assert(tools.some((tool) => tool.name === "puerts_asset_create"), "asset_create tool is missing");
     assert(tools.some((tool) => tool.name === "puerts_project_settings_patch"), "generic project settings tool is missing");

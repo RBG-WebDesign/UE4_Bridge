@@ -86,6 +86,7 @@ declare module "ue" {
     IsRuntimeReady(): boolean;
     GetRuntimeToolCount(): number;
     FindAssetsJson(path: string, typeFilter: string, nameFilter: string, recursive: boolean, limit: number, outAssetsJson: $Ref<string>, outError: $Ref<string>): boolean;
+    AssetsCleanerLargestUnusedJson(requestJson: string, outResultJson: $Ref<string>, outError: $Ref<string>): boolean;
     DeleteAsset(assetPath: string, confirm: boolean, force: boolean, outResultJson: $Ref<string>, outError: $Ref<string>): boolean;
     FindLevelActor(nameOrPath: string): Actor;
     FindObjectByPath(objectPath: string): Object;

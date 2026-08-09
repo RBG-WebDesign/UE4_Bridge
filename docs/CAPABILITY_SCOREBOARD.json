@@ -1,10 +1,11 @@
 {
   "generated_by": "Scripts/generate-tool-inventory.mjs (do not edit by hand)",
-  "total_registrations": 311,
-  "unique_canonical_capabilities": 214,
+  "total_registrations": 312,
+  "unique_canonical_capabilities": 215,
   "canonical_capabilities_readiness": {
     "editor_free_verified": 4,
     "live_verified": 73,
+    "implemented": 1,
     "quarantined": 1,
     "pending_live": 1
   },
@@ -23,7 +24,7 @@
     "legacy_http": 170,
     "native_pipe_alias": 62,
     "server_local": 4,
-    "native_pipe": 75
+    "native_pipe": 76
   },
   "by_verification": {
     "replaced": 69,
@@ -31,6 +32,7 @@
     "retired": 101,
     "editor_free_verified": 4,
     "live_verified": 73,
+    "implemented": 1,
     "quarantined": 1,
     "pending_live": 1
   },
@@ -39,7 +41,7 @@
     "PORT": 37,
     "REFRONT": 25,
     "MERGE": 7,
-    "KEEP": 128,
+    "KEEP": 129,
     "RETIRE": 1
   },
   "by_capability_category": {
@@ -49,7 +51,7 @@
     "animation": 12,
     "blueprint": 31,
     "project": 15,
-    "assets": 15,
+    "assets": 16,
     "editor-ops": 8,
     "listener-admin": 9,
     "status": 1,

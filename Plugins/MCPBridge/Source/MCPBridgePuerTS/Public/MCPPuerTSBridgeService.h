@@ -112,6 +112,21 @@ public:
         FString& OutAssetsJson,
         FString& OutError) const;
 
+    /** Rank unused assets by their real size on disk, classifying "unused"
+        with the exact checks the installed Assets Cleaner plugin applies (zero
+        package referencers across every dependency category, no
+        GameMapsSettings/MapsToCook match, levels excluded unless the plugin's
+        Show Levels setting is on - read from its settings CDO by reflection,
+        never by linking the plugin). Sizes are file stats of the package file
+        plus any cooked-style sidecars. READ ONLY: works entirely from
+        FAssetData and the filesystem, loads nothing, saves nothing, and is
+        deliberately absent from IsToolMutating. */
+    UFUNCTION(BlueprintCallable, Category="MCP PuerTS Bridge")
+    bool AssetsCleanerLargestUnusedJson(
+        const FString& RequestJson,
+        FString& OutResultJson,
+        FString& OutError) const;
+
     /** Permanently delete one /Game asset. confirm=true is mandatory. force
         uses UE4.27's ForceDeleteObjects path and may null references. Asset
         deletion is not transacted and cannot be undone. */

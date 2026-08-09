@@ -481,6 +481,18 @@ const aiToolsRef = detail("ai-input-audio-tools.md");
 const specs = [
   ["puerts_diagnostic", "diagnostic", "Prove the in-process PuerTS context, game thread, named-pipe transport, and actor-query timing.", z.object({ actor_limit: z.number().optional() }).strict()],
   ["puerts_find_assets", "find_assets", "Find UE4.27 assets by path, type, or name.", z.object({ path: z.string().optional(), type: z.string().optional(), name: z.string().optional(), recursive: z.boolean().optional(), limit: z.number().optional() }).strict()],
+  ["puerts_assets_cleaner_largest_unused", "assets_cleaner_largest_unused",
+    "Rank unused assets by real disk size, using the Assets Cleaner plugin's own classification "
+    + "(zero referencers, no GameMapsSettings/MapsToCook match; levels excluded unless its Show "
+    + "Levels setting is on). Sizes are file stats. Returns top rows plus totals by folder and "
+    + "class. READ ONLY: loads nothing, saves nothing.",
+    z.object({
+      root: z.string().optional().describe("Default /Game."),
+      min_size_mb: z.number().optional().describe("List floor; totals unaffected."),
+      asset_class: z.string().optional().describe("Class-name substring."),
+      limit: z.number().optional().describe("Default 100, max 500."),
+      include_levels: z.boolean().optional().describe("Overrides Show Levels."),
+    }).strict()],
   ["puerts_delete_asset", "delete_asset",
     "Permanently delete one asset under /Game. confirm=true is mandatory. By default UE4.27 "
     + "checks both disk and memory references and refuses a referenced asset. force=true uses "

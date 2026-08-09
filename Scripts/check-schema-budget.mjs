@@ -29,16 +29,19 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const distDir = join(repoRoot, 'mcp-server', 'dist');
 const report = process.argv.includes('--report');
 
-// Budgets in bytes of serialized JSON. The catalog is ~135 KB today, so the
-// total carries about 5 KB of slack: enough for an honest new tool, not enough
+// Budgets in bytes of serialized JSON. The catalog is ~141 KB today, so the
+// total carries about 4 KB of slack: enough for an honest new tool, not enough
 // to absorb a wave of them without someone deciding that is what they want.
+// Raised 140k -> 145k on 2026-08-09 when assets_cleaner_largest_unused (976
+// bytes, description well under its own cap) landed against ~70 bytes of
+// remaining slack; the tools added since the 135 KB note had spent the rest.
 //
 // The two budgets guard different failures and that split is deliberate.
 // TOTAL catches tool-count sprawl, where every tool is reasonable and the sum
 // is not. DESCRIPTION catches prose regrowth, which is the failure that
 // actually happened here: no single description looked unreasonable while it
 // was being written.
-const TOTAL_BUDGET = 140_000;
+const TOTAL_BUDGET = 145_000;
 const PER_TOOL_BUDGET = 6_000;
 const DESCRIPTION_BUDGET = 1_200;
 

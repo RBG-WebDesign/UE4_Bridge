@@ -72,6 +72,9 @@ export const toolAnnotations: Record<string, ToolAnnotations> = {
   // --- PuerTS native named-pipe lane ---------------------------------------
   puerts_diagnostic: readOnly,
   puerts_find_assets: readOnly,
+  // Ranks unused assets by disk size with Assets Cleaner's classification.
+  // Structurally read-only: FAssetData and file stats, nothing loaded.
+  puerts_assets_cleaner_largest_unused: readOnly,
   // Permanent package deletion. Idempotent because an already absent asset is
   // a successful no-op; force=true may also null references in other packages.
   puerts_delete_asset: destructiveIdempotent,

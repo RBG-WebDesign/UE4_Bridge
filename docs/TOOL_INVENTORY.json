@@ -23,12 +23,12 @@
     "native_live_partial": "live acceptance passed, but part of the evidence is the builder own report because no independent reader exists yet",
     "legacy_untested": "no live editor proof of any kind; a non-null test_file covers only the mock listener"
   },
-  "tool_count": 311,
+  "tool_count": 312,
   "by_backend": {
     "legacy_http": 170,
     "native_pipe_alias": 62,
     "server_local": 4,
-    "native_pipe": 75
+    "native_pipe": 76
   },
   "tools": [
     {
@@ -8955,6 +8955,49 @@
       "capability_loss_risk": "low",
       "notes": "Added and live-verified 2026-08-07 on UE4.27: a SFLevelConfig was moved between /Game/MCPGenerated sandbox folders, the Asset Registry showed it only at the destination, and the source path stopped resolving. Moves through IAssetTools::RenameAssets. NOTE: redirector_left was false in that run because the source was a never-submitted Perforce add, which UE reverts rather than redirecting; the redirector path on a submitted asset is not yet exercised.",
       "verification": "live_verified"
+    },
+    {
+      "name": "puerts_assets_cleaner_largest_unused",
+      "module": "mcp-server/src/tools/puerts.ts",
+      "backend": "native_pipe",
+      "migration_state": "native_pending_live",
+      "target_replacement": null,
+      "description": "[PRIMARY NATIVE IPC] Rank unused assets by real disk size, using the Assets Cleaner plugin's own classification (zero referencers, no GameMapsSettings/MapsToCook match; levels excluded unless its Show Levels setting is on). Sizes are file stats. Returns top rows plus totals by folder and class. READ ONLY: loads nothing, saves nothing.",
+      "schema": {
+        "kind": "object",
+        "params": {
+          "root": "string?",
+          "min_size_mb": "number?",
+          "asset_class": "string?",
+          "limit": "number?",
+          "include_levels": "boolean?"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "module_listener_commands": [],
+      "test_file": "mcp-server/tests/puerts-tools.test.ts",
+      "capability_category": "assets",
+      "canonical_capability": "assets.audit_unused",
+      "owner": "MCPBridgePuerTS service",
+      "lifecycle": "active",
+      "migration_action": "KEEP",
+      "replacement_tool": null,
+      "compatibility_alias": false,
+      "cpp_builder": null,
+      "cpp_entry_point": null,
+      "python_handler": null,
+      "live_evidence": [
+        "mcp-server/tests/puerts-tools.test.ts"
+      ],
+      "migration_risk": "low",
+      "capability_loss_risk": "low",
+      "notes": "Read-only unused-asset disk-size audit. Classification mirrors AssetsCleanerUtils::ShouldFilterOutAsset exactly (the plugin exposes no callable scanner); sizes come from file stats of the package files plus sidecars.",
+      "verification": "implemented"
     },
     {
       "name": "puerts_audio_build",

@@ -77,6 +77,20 @@ async function findAssets(context: ToolContext, input: JsonObject): Promise<Comm
   const parsed = JSON.parse(puerts.$unref(assetsJson)) as JsonObject;
   return response(true, "Assets found.", parsed);
 }
+/** Rank unused assets by real disk size, using Assets Cleaner's own
+    classification evaluated natively. Read only: the native side works from
+    FAssetData and file stats, loads nothing and saves nothing. Parameter
+    validation is native too, because root/limit clamping belongs beside the
+    registry query that consumes them. */
+async function assetsCleanerLargestUnused(context: ToolContext, input: JsonObject): Promise<CommandResponse> {
+  const resultJson = puerts.$ref<string>("");
+  const error = puerts.$ref<string>("");
+  if (!context.bridge.AssetsCleanerLargestUnusedJson(JSON.stringify(input), resultJson, error)) {
+    throw new Error(puerts.$unref(error));
+  }
+  const parsed = JSON.parse(puerts.$unref(resultJson)) as JsonObject;
+  return response(true, "Largest unused assets ranked.", parsed);
+}
 async function deleteAsset(context: ToolContext, input: JsonObject): Promise<CommandResponse> {
   const assetPath = requireString(input, "asset_path");
   if (!assetPath.startsWith("/Game/")) {
@@ -2810,6 +2824,9 @@ export const quarantinedTools: Readonly<Record<string, string>> = {
 export const toolDefinitions: readonly ToolDefinition[] = [
   { name: "diagnostic", permissions: ["actors.read"], executionTimeoutMs: 2000, execute: diagnostic },
   { name: "find_assets", permissions: ["assets.read"], executionTimeoutMs: 4000, execute: findAssets },
+  // A full-project registry walk with one GetReferencers call per package and
+  // one file stat per unused package, so it gets the widest read budget.
+  { name: "assets_cleaner_largest_unused", permissions: ["assets.read"], executionTimeoutMs: 30000, execute: assetsCleanerLargestUnused },
   { name: "delete_asset", permissions: ["assets.delete"], executionTimeoutMs: 30000, execute: deleteAsset },
   // Asset lifecycle. Both write package files and save before returning, so the
   // budgets match delete_asset rather than a read.
